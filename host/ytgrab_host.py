@@ -292,6 +292,22 @@ def handle(msg: dict) -> None:
     fail(msg_id, f"unknown command: {cmd}")
 
 
+def _dispatch(msg: dict) -> None:
+    try:
+        handle(msg)
+    except Exception as exc:  # noqa: BLE001
+        log("handler crashed:", repr(exc))
+        fail(msg.get("id"), str(exc))
+
+
+# Commands that can block for a long time: a yt-dlp probe, or starting / talking
+# to the queue window.  They run on their own thread so a slow one never delays
+# the ping the popup uses to show the host version -- otherwise the popup looks
+# stuck on "Reading available formats..." and the version check at the same
+# time.  choose_folder stays on the main thread because Tk wants to own it.
+_SLOW_COMMANDS = frozenset({"list_formats", "download", "open_ui"})
+
+
 def main() -> None:
     log(f"{APP} host {VERSION} starting")
     while True:
@@ -304,11 +320,10 @@ def main() -> None:
             break
         if not isinstance(msg, dict):
             continue
-        try:
-            handle(msg)
-        except Exception as exc:  # noqa: BLE001
-            log("handler crashed:", repr(exc))
-            fail(msg.get("id"), str(exc))
+        if msg.get("cmd") in _SLOW_COMMANDS:
+            threading.Thread(target=_dispatch, args=(msg,), daemon=True).start()
+        else:
+            _dispatch(msg)
     log("stdin closed, exiting")
 
 

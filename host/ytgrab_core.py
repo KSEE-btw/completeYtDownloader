@@ -27,7 +27,7 @@ import uuid
 # --------------------------------------------------------------------------- #
 
 APP = "ytgrab"
-VERSION = "0.3.5"
+VERSION = "0.3.6"
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", APP)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -539,7 +539,7 @@ def ytdlp_base_args(cfg: dict, progress: bool = False):
     return args
 
 
-def run_ytdlp_json(url: str, timeout: int = 150) -> dict:
+def run_ytdlp_json(url: str, timeout: int = 90) -> dict:
     cfg = load_config()
     exe = tools()["ytdlp"]
     if not exe:
@@ -547,9 +547,15 @@ def run_ytdlp_json(url: str, timeout: int = 150) -> dict:
     args = ([exe] + ytdlp_base_args(cfg)
             + ["--dump-single-json", "--skip-download", url])
     log("probe:", " ".join(args))
-    proc = subprocess.run(args, capture_output=True, text=True,
-                          encoding="utf-8", errors="replace", timeout=timeout,
-                          **child_kwargs())
+    try:
+        proc = subprocess.run(args, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace",
+                              timeout=timeout, **child_kwargs())
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            f"yt-dlp did not finish reading this video within {timeout}s. "
+            "Live streams, premieres and age-restricted videos are the usual "
+            "cause -- try again, or pick a normal video.")
     if proc.returncode != 0 or not proc.stdout.strip():
         tail = (proc.stderr or "").strip().splitlines()
         raise RuntimeError(tail[-1] if tail else "yt-dlp could not read this URL")

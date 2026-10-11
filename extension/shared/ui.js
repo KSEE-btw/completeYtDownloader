@@ -94,6 +94,8 @@
       targets: {},
       running: false,
       connected: false,
+      pingTimer: null,
+      probeTimer: null,
     };
 
     // --- elements ---
@@ -339,6 +341,20 @@
 
       state.pingId = nextId("ping");
       send({ cmd: "ping", id: state.pingId });
+      // If the helper does not answer, say so instead of sitting on
+      // "checking…" forever.
+      clearTimeout(state.pingTimer);
+      state.pingTimer = setTimeout(() => {
+        if (!state.connected) {
+          hostBadge.textContent = "host not responding";
+          hostBadge.className = "host-badge bad";
+          setStatus(
+            "The ytgrab helper is not answering. Try again, or restart " +
+              "Firefox if it keeps happening.",
+            "bad"
+          );
+        }
+      }, 20000);
       if (opts.url) {
         probe();
       }
@@ -373,6 +389,7 @@
 
       if (msg.id === state.pingId && type === "pong") {
         state.connected = true;
+        clearTimeout(state.pingTimer);
         state.config = msg.config || {};
         state.targets = msg.targets || {};
         const ok = msg.ok;
@@ -394,6 +411,8 @@
       }
 
       if (msg.id === state.listId) {
+        clearTimeout(state.probeTimer);
+        state.listId = null;
         if (type === "formats") {
           state.formats = msg.formats || [];
           titleEl.textContent = msg.title || "";
@@ -595,6 +614,18 @@
       opts.url = url;
       setStatus("Reading available formats\u2026", "");
       state.listId = nextId("list");
+      // A probe can legitimately take a while (a long or live video), but say
+      // so rather than look frozen.
+      clearTimeout(state.probeTimer);
+      state.probeTimer = setTimeout(() => {
+        if (state.listId) {
+          setStatus(
+            "Still reading this video\u2026 live or age-restricted videos " +
+              "can take a while.",
+            ""
+          );
+        }
+      }, 25000);
       send({ cmd: "list_formats", id: state.listId, url });
     }
 
