@@ -624,7 +624,6 @@
         mode: sel.mode,
         convert: convertBox.checked,
         target: targetSel.value,
-        outdir: outdirInput.value || state.config.outdir,
         keep_original: !!state.config.keep_original,
       });
     }

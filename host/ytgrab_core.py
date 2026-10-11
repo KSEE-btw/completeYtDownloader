@@ -27,7 +27,7 @@ import uuid
 # --------------------------------------------------------------------------- #
 
 APP = "ytgrab"
-VERSION = "0.3.4"
+VERSION = "0.3.5"
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", APP)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -136,12 +136,25 @@ def log(*parts: object) -> None:
 
 _config_lock = threading.Lock()
 _config_cache = None
+_config_mtime = None
+
+
+def _config_file_mtime():
+    """mtime of config.json, or None when it does not exist yet."""
+    try:
+        return os.path.getmtime(CONFIG_PATH)
+    except OSError:
+        return None
 
 
 def load_config() -> dict:
-    global _config_cache
+    global _config_cache, _config_mtime
     with _config_lock:
-        if _config_cache is not None:
+        # The queue window, the native host and the CLI are separate processes
+        # that all touch config.json.  Re-read whenever the file's mtime moved
+        # so one process never serves a folder another process just changed.
+        mtime = _config_file_mtime()
+        if _config_cache is not None and mtime == _config_mtime:
             return _config_cache
         cfg = dict(DEFAULT_CONFIG)
         try:
@@ -152,11 +165,12 @@ def load_config() -> dict:
         except Exception as exc:
             log("config read failed:", exc)
         _config_cache = cfg
+        _config_mtime = mtime
         return cfg
 
 
 def save_config(patch: dict) -> dict:
-    global _config_cache
+    global _config_cache, _config_mtime
     cfg = dict(load_config())
     for key, value in (patch or {}).items():
         if key in DEFAULT_CONFIG:
@@ -166,13 +180,15 @@ def save_config(patch: dict) -> dict:
         with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
             json.dump(cfg, fh, indent=2, ensure_ascii=False)
         _config_cache = cfg
+        _config_mtime = _config_file_mtime()
     return cfg
 
 
 def reset_config_cache() -> None:
-    global _config_cache
+    global _config_cache, _config_mtime
     with _config_lock:
         _config_cache = None
+        _config_mtime = None
 
 
 def choose_folder(start: str = "", parent=None) -> str:
