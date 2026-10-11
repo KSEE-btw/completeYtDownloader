@@ -34,6 +34,25 @@ $installDir = Join-Path $env:LOCALAPPDATA "ytgrab"
 # shared Firefox helpers (the signed-.xpi finder for the closing message)
 $lib = Join-Path $here "lib\firefox.ps1"
 if (Test-Path $lib) { . $lib }
+
+# How to describe getting a permanently-installable build: package.ps1 exists in
+# a checkout but not in a release bundle, which only carries the signed .xpi.
+$signHint = if (Test-Path (Join-Path $here "package.ps1")) {
+  "scripts\package.ps1 -Sign  (free AMO keys; see README.md)"
+} else {
+  "ask whoever sent you this bundle for the signed .xpi"
+}
+
+# What about:debugging should be pointed at: the source manifest in a checkout,
+# or the packaged unsigned .xpi a release bundle actually carries.
+$tempHint = if ((Test-Path (Join-Path $here "extension\manifest.json")) -or
+                (Test-Path (Join-Path $here "..\extension\manifest.json"))) {
+  "extension\manifest.json"
+} else {
+  $u = Get-ChildItem (Join-Path $here "*unsigned*.xpi") -ErrorAction SilentlyContinue |
+         Sort-Object LastWriteTime | Select-Object -Last 1
+  if ($u) { $u.Name } else { "the .xpi in this folder" }
+}
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 
 if (-not $Quiet) {
@@ -157,7 +176,7 @@ try {
 if ($ok) {
   Write-Host "host responds OK" -ForegroundColor Green
 } else {
-  Write-Warning "host did not respond; see the Troubleshooting section in README.md"
+  Write-Warning "host did not respond; see the troubleshooting notes in the project documentation"
 }
 
 # --- 6. what is left ---------------------------------------------------------
@@ -181,10 +200,9 @@ if (-not $Quiet) {
     Write-Host "  No Mozilla-signed .xpi is next to this script, and release Firefox"
     Write-Host "  will not keep an add-on it cannot verify. Two options:"
     Write-Host ""
-    Write-Host "    permanent : make one once, with free AMO keys --"
-    Write-Host "                  scripts\package.ps1 -Sign      (see README.md)"
+    Write-Host "    permanent : $signHint"
     Write-Host "    right now : about:debugging#/runtime/this-firefox"
-    Write-Host "                  -> 'Load Temporary Add-on...' -> extension\manifest.json"
+    Write-Host "                  -> 'Load Temporary Add-on...' -> $tempHint"
     Write-Host "                  (works instantly; goes away when Firefox quits)"
   }
   Write-Host ""

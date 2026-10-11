@@ -95,8 +95,9 @@ Install the extension:
 Install the extension (this build is UNSIGNED, so it is temporary):
      - about:debugging#/runtime/this-firefox -> 'Load Temporary Add-on...'
        -> pick $xpiName in this folder
-   Unsigned builds only last until Firefox quits. For a permanent install,
-   rebuild with:  scripts\package.ps1 -Sign
+   Unsigned builds only last until Firefox quits. A permanent install needs a
+   Mozilla-signed .xpi, which only whoever built this bundle can produce
+   (scripts\package.ps1 -Sign) -- ask them for the signed one.
 "@
 }
 

@@ -30,6 +30,26 @@ $here = $PSScriptRoot
 $lib = Join-Path $here "lib\firefox.ps1"
 if (Test-Path $lib) { . $lib }
 
+# How to tell someone to get a permanently-installable build. The answer
+# differs by context: in a checkout package.ps1 is right here, but a release
+# bundle only carries the signed .xpi (or, unsigned, an explanation).
+$signHint = if (Test-Path (Join-Path $here "package.ps1")) {
+  "scripts\package.ps1 -Sign  (free AMO keys; see README.md)"
+} else {
+  "ask whoever sent you this bundle for the signed .xpi"
+}
+
+# What to point about:debugging at: the source manifest in a checkout, or the
+# packaged unsigned .xpi that a release bundle actually ships.
+$tempHint = if ((Test-Path (Join-Path $here "extension\manifest.json")) -or
+                (Test-Path (Join-Path $here "..\extension\manifest.json"))) {
+  "extension\manifest.json"
+} else {
+  $u = Get-ChildItem (Join-Path $here "*unsigned*.xpi") -ErrorAction SilentlyContinue |
+         Sort-Object LastWriteTime | Select-Object -Last 1
+  if ($u) { $u.Name } else { "the .xpi in this folder" }
+}
+
 # --------------------------------------------------------------------------- #
 # console helpers
 # --------------------------------------------------------------------------- #
@@ -250,9 +270,10 @@ function Step-Browser {
   if (-not $xpi) {
     Write-Warn2 "no Mozilla-signed .xpi found next to this installer"
     Write-Info "Firefox only keeps an add-on permanently if Mozilla signed it."
-    Write-Info "Build one once (free):  scripts\package.ps1 -Sign"
+    Write-Info "To get one:  $signHint"
     Write-Info "or load it temporarily for now:"
     Write-Info "  about:debugging#/runtime/this-firefox -> Load Temporary Add-on"
+    Write-Info "  -> $tempHint"
     $state.extension = "needs a signed .xpi"
     return
   }
@@ -312,7 +333,8 @@ Write-Host ""
 if ($state.extension -like "install prompted" -or (Test-FirefoxExtensionSeen)) {
   Write-Ok "Open any YouTube video and click the blue arrow at the bottom right."
 } else {
-  Write-Info "Next: get a signed .xpi (scripts\package.ps1 -Sign) and install it,"
+  Write-Info "Next: get a signed .xpi --"
+  Write-Info "  $signHint"
   Write-Info "or load the extension temporarily from about:debugging."
 }
 Write-Host ""
