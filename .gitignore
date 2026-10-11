@@ -9,5 +9,10 @@ __pycache__/
 host/ytgrab.manifest.json
 host/ytgrab-launcher.bat
 
+# packaged / signed extensions and release bundles
+web-ext-artifacts/
+release/
+.amo-upload-uuid
+
 # local overrides
 config.json

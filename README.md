@@ -42,30 +42,43 @@ Conversion targets: **H.264/AAC MP4** (default), **DNxHR HQ/PCM MOV**,
 
 - Windows 10/11, Firefox 115+
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp), `ffmpeg` and `ffprobe` on `PATH`
-  (`winget install yt-dlp ffmpeg`)
+  (`winget install yt-dlp.yt-dlp Gyan.FFmpeg`)
 - Python 3.9+ — only to install/build the companion; the shipped exe is standalone
+- Node 18+ — only to package/sign the extension (`web-ext`)
 
 ## Install
 
+### 1. The companion host (once per machine)
+
 ```powershell
 cd ytgrab
-# builds host\dist\ytgrab-host.exe and registers it with Firefox
+# builds host\dist\ytgrab-host.exe, installs it and registers it with Firefox
 powershell -ExecutionPolicy Bypass -File scripts\build_host.ps1
 ```
 
-That writes `host\ytgrab.manifest.json` and adds
-`HKCU\Software\Mozilla\NativeMessagingHosts\ytgrab` — **no admin rights needed**.
-(If you'd rather not build an exe, run `scripts\install.ps1` on its own; it
-falls back to a `pythonw` launcher.)
+The installer copies the host to `%LOCALAPPDATA%\ytgrab`, writes the
+native-messaging manifest there, and adds
+`HKCU\Software\Mozilla\NativeMessagingHosts\ytgrab` — **no admin rights needed**,
+and it keeps working if you later move or delete this checkout. Missing
+`yt-dlp`/`ffmpeg`? Add `-InstallDeps` and the installer runs `winget` for you:
 
-Then load the extension:
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -InstallDeps
+```
+
+(No exe builder handy? Plain `scripts\install.ps1` falls back to a `pythonw`
+launcher, so the host still runs straight from the Python source.)
+
+### 2. The extension
+
+For a quick trial (this vanishes the moment Firefox quits):
 
 1. Open `about:debugging#/runtime/this-firefox`
 2. **Load Temporary Add-on…** → pick `extension/manifest.json`
 3. Open any YouTube video — click the blue arrow button at the bottom right.
 
-Temporary add-ons disappear when Firefox restarts. To make it permanent,
-package and sign it (see below).
+For a permanent install, sign it once — see
+[Make it permanent](#make-it-permanent-so-it-survives-a-firefox-restart).
 
 ## Using it
 
@@ -131,16 +144,86 @@ python scripts\test_host.py "URL"                  # talk the native protocol
 `scripts/test_host.py` speaks the real native-messaging framing, so it exercises
 exactly what Firefox does without opening a browser.
 
-## Packaging for a permanent install
+## Make it permanent (so it survives a Firefox restart)
 
-```bash
-npx web-ext build --source-dir extension --artifacts-dir web-ext-artifacts
-npx web-ext sign --source-dir extension --api-key ... --api-secret ...
+Extensions loaded from `about:debugging` are **temporary** and are gone as soon
+as Firefox closes. Release Firefox will only keep an add-on permanently if
+**Mozilla has signed it** — that is a Firefox security rule, not a ytgrab
+limitation. Signing is free and does not publish anything unless you ask it to.
+
+**Once per machine**, grab API credentials from
+<https://addons.mozilla.org/developers/addon/api/key/> (they look like
+`user:12345:67` and a long hex string), then:
+
+```powershell
+$env:AMO_JWT_ISSUER = 'user:12345:67'
+$env:AMO_JWT_SECRET = 'deadbeef…'
+
+powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Sign
 ```
 
-(`web-ext` refuses to sign unless the extension ID in `manifest.json` matches
-one you control on addons.mozilla.org. Self-distribution / unlisted signing is
-the usual route.)
+`package.ps1` lints the add-on with the same validator AMO uses, builds it, and
+uploads it for **unlisted** (self-distribution) signing. It writes a signed
+`web-ext-artifacts\ytgrab-<version>.xpi`. Install that file and you're done:
+
+- **about:addons** → gear icon (top right) → **Install Add-on From File…** →
+  pick the `.xpi`, **or**
+- drag the `.xpi` straight into a Firefox window and confirm.
+
+From then on it loads automatically at every start, like any other add-on.
+
+> AMO refuses to sign a version number it has already seen, so pass `-BumpPatch`
+> (`scripts\package.ps1 -Sign -BumpPatch`) when re-releasing.
+
+<details>
+<summary>Prefer not to sign? (Developer Edition / Nightly / ESR only)</summary>
+
+On **Firefox Developer Edition, Nightly or ESR** you can run an unsigned build
+permanently: set `xpinstall.signatures.required` to `false` in `about:config`,
+then install `web-ext-artifacts\ytgrab-<version>-unsigned.xpi`. The preference
+is **ignored on regular Firefox**, so this is not an option there.
+
+</details>
+
+## Share it with someone else
+
+One command produces a self-contained bundle:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\make_release.ps1 -Sign
+```
+
+That writes `release\ytgrab-<version>-windows.zip` containing the standalone
+host exe, `install.ps1` / `uninstall.ps1`, the signed `.xpi`, and a
+`READ-ME-FIRST.txt`. Hand the zip to anyone (attach it to a GitHub Release);
+their steps are:
+
+1. unzip it
+2. `powershell -ExecutionPolicy Bypass -File install.ps1 -InstallDeps`
+   *(no admin rights; `-InstallDeps` fetches yt-dlp + ffmpeg via `winget`)*
+3. drag the `.xpi` into Firefox
+4. click the blue arrow on any YouTube video
+
+The repo also ships `.github/workflows/release.yml`, which runs exactly this on a
+`v*` tag and attaches the zip to a GitHub Release. Add `AMO_JWT_ISSUER` and
+`AMO_JWT_SECRET` as repository secrets and the CI build is signed too.
+
+Two things are worth knowing when you hand this out:
+
+- **Everyone shares one extension ID.** The `.xpi` you sign is
+  `ytgrab@kunal.local` (from `extension/manifest.json`), and the installer
+  allows exactly that ID. Re-sign the same ID for updates — don't change it, or
+  installed copies stop talking to the host.
+- **The native host can't be avoided.** A browser extension is not allowed to
+  run `yt-dlp`, so a local companion + a registry entry are required. That is
+  why install is a two-step (helper, then extension) rather than a single
+  "Add to Firefox" click.
+
+Want it discoverable and one-click? Publish it publicly instead: set
+`sign.channel` to `listed` in `.web-ext-config.mjs` and run
+`npx web-ext sign --channel listed` (needs a first-listing metadata file — see
+the [web-ext docs](https://extensionworkshop.com/documentation/develop/getting-started-with-web-ext/)).
+The host installer still has to be distributed alongside it.
 
 ## Uninstall
 
@@ -148,8 +231,9 @@ the usual route.)
 powershell -ExecutionPolicy Bypass -File scripts\uninstall.ps1
 ```
 
-Removes the registry key and generated manifest. The config file and built exe
-are left alone.
+Removes the registry key and the copy under `%LOCALAPPDATA%\ytgrab`. Add
+`-Purge` to also delete your saved settings (`~/.config/ytgrab`). Remove the
+extension itself from `about:addons` in Firefox.
 
 ## Troubleshooting
 
@@ -157,6 +241,14 @@ are left alone.
   Check the key exists:
   `Get-ItemProperty HKCU:\Software\Mozilla\NativeMessagingHosts\ytgrab`
 - **"tools missing"** — `yt-dlp`/`ffmpeg` aren't on the `PATH` Firefox sees.
-  Set explicit paths in the config.
+  `scripts\install.ps1 -InstallDeps`, or set explicit paths in the config.
 - **Nothing appears on YouTube** — the extension must be loaded in
-  `about:debugging`; check the browser console for a ytgrab error.
+  `about:debugging` (or permanently installed); check the browser console for a
+  ytgrab error.
+- **Firefox refuses to install the `.xpi`** ("could not be installed because it
+  is not verified") — that's the unsigned build. Sign it
+  (`scripts\package.ps1 -Sign`) or switch to Firefox Developer Edition.
+- **A signed install won't update** — bump the version first:
+  `scripts\package.ps1 -Sign -BumpPatch`.
+- **`web-ext` complains about Node** — this repo pins `web-ext@8` (Node 18+).
+  web-ext 10 needs Node 20; upgrade Node or keep the pin.

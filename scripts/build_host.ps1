@@ -1,4 +1,4 @@
-# ytgrab — build a standalone host executable with PyInstaller
+# ytgrab -- build a standalone host executable with PyInstaller
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\build_host.ps1
 #
@@ -8,7 +8,8 @@
 [CmdletBinding()]
 param(
   [string]$Python = "",
-  [switch]$OneDir
+  [switch]$OneDir,
+  [switch]$NoInstall
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,4 +48,8 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 $exe = Join-Path $hostDir "dist\ytgrab-host.exe"
 Write-Host "built $exe" -ForegroundColor Green
 
-& (Join-Path $PSScriptRoot "install.ps1") -Python $Python
+if ($NoInstall) {
+  Write-Host "(skipping install.ps1 because -NoInstall was given)"
+} else {
+  & (Join-Path $PSScriptRoot "install.ps1") -Python $Python
+}
