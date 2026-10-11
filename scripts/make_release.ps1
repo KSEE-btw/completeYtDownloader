@@ -63,6 +63,8 @@ Copy-Item (Join-Path $root "host\ytgrab_host.py") (Join-Path $stage "ytgrab_host
 Copy-Item (Join-Path $PSScriptRoot "setup.ps1")     (Join-Path $stage "setup.ps1")     -Force
 Copy-Item (Join-Path $PSScriptRoot "install.ps1") (Join-Path $stage "install.ps1")     -Force
 Copy-Item (Join-Path $PSScriptRoot "uninstall.ps1") (Join-Path $stage "uninstall.ps1") -Force
+New-Item -ItemType Directory -Force -Path (Join-Path $stage "lib") | Out-Null
+Copy-Item (Join-Path $PSScriptRoot "lib\firefox.ps1") (Join-Path $stage "lib\firefox.ps1") -Force
 
 $xpiName = $null
 $signed = Get-ChildItem (Join-Path $root "web-ext-artifacts\*.xpi") -ErrorAction SilentlyContinue |
@@ -118,7 +120,8 @@ ytgrab -- quick start (Windows)
 By hand instead?  powershell -ExecutionPolicy Bypass -File install.ps1 -InstallDeps
 
 Configuration and full docs: see README.md in the project repository.
-To remove everything:  powershell -ExecutionPolicy Bypass -File uninstall.ps1
+To remove everything:  powershell -ExecutionPolicy Bypass -File uninstall.ps1 -Purge
+   (add -Deep with Firefox closed to clear the last profile bookkeeping)
 "@
 [System.IO.File]::WriteAllText((Join-Path $stage "READ-ME-FIRST.txt"),
   $readme, (New-Object System.Text.UTF8Encoding($false)))
