@@ -241,6 +241,22 @@
   border-color: var(--accent);
 }
 
+.ytgrab .folderrow {
+  display: flex;
+  gap: 6px;
+}
+
+.ytgrab .folderrow input.outdir {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ytgrab button.folder {
+  flex: 0 0 auto;
+  min-width: 32px;
+  padding: 7px 10px;
+}
+
 .ytgrab .progress {
   display: grid;
   gap: 5px;

@@ -132,6 +132,8 @@ For a permanent install, sign it once — see
 - The floating button appears on YouTube pages; the toolbar icon works anywhere
   (paste any URL yt-dlp understands, not just YouTube).
 - Pick a format — each entry is tagged `Premiere ✓`, `repack` or `convert`.
+- Choose where files land with the **…** button in the **Save to** bar: pick a
+  folder on this computer and ytgrab remembers it as your default.
 - Leave **"Convert to a Premiere-compatible file — only if needed"** ticked
   and choose a target codec.
 - **Download** hands the job to the queue window; the panel confirms *"Added to
@@ -150,8 +152,9 @@ started survives closing the popup, and even closing Firefox.
 - **Quit** (in the window, or `Ctrl+Q`) stops ytgrab. Unfinished items are saved
   and **resume the next time the window starts**; finished items stay as
   history.
-- **Open folder** jumps to your output directory; **Clear finished** tidies the
-  history away.
+- The **Save to** bar shows where downloads land; **Change…** opens the folder
+  picker and remembers the choice. **Open folder** jumps there; **Clear
+  finished** tidies the history away.
 
 The queue lives in `~/.config/ytgrab/queue.json`. Deleting it just forgets the
 history — no downloads are harmed.
@@ -199,7 +202,7 @@ manifest version, the core version and that file in step.
 
 | key | meaning |
 | --- | --- |
-| `outdir` | where finished files go |
+| `outdir` | where finished files go — set it with the **…** button beside **Save to** (or **Change…** in the queue window) |
 | `default_mode` | `premiere_safe` or `best` for the Auto entry |
 | `default_target` | `h264`, `dnxhr` or `prores` |
 | `keep_original` | keep the non-Premiere source after converting |

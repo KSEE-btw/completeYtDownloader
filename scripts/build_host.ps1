@@ -58,11 +58,18 @@ Build-YtgrabExe -Name "ytgrab-host" -Entry "ytgrab_host.py" -Extra @(
   "--noconsole",
   "--hidden-import", "tkinter",
   "--hidden-import", "tkinter.ttk",
-  "--hidden-import", "tkinter.messagebox"
+  "--hidden-import", "tkinter.messagebox",
+  "--hidden-import", "tkinter.filedialog"
 )
 
-# The CLI is a console app: it prints progress and release notes.
-Build-YtgrabExe -Name "ytgrab" -Entry "ytgrab_cli.py" -Extra @()
+# The CLI is a console app: it prints progress and release notes.  It opens the
+# queue window by re-running ytgrab-host.exe, so it never needs tkinter itself
+# -- excluding it keeps the bundle from shipping the Tk runtime twice.
+Build-YtgrabExe -Name "ytgrab" -Entry "ytgrab_cli.py" -Extra @(
+  "--exclude-module", "tkinter",
+  "--exclude-module", "tkinter.filedialog",
+  "--exclude-module", "_tkinter"
+)
 
 foreach ($name in @("ytgrab-host.exe", "ytgrab.exe")) {
   $exe = Join-Path $distPath $name

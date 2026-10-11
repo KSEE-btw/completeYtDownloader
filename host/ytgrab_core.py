@@ -27,7 +27,7 @@ import uuid
 # --------------------------------------------------------------------------- #
 
 APP = "ytgrab"
-VERSION = "0.3.3"
+VERSION = "0.3.4"
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", APP)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -173,6 +173,45 @@ def reset_config_cache() -> None:
     global _config_cache
     with _config_lock:
         _config_cache = None
+
+
+def choose_folder(start: str = "", parent=None) -> str:
+    """Open the OS folder picker; return the chosen path, or "" if cancelled.
+
+    The queue window passes itself as `parent` -- Tk only allows one root per
+    process -- while the native host, which has no window, gets a transient
+    hidden one.  tkinter is imported here rather than at module scope so the
+    CLI and the download worker never pull in a GUI.
+    """
+    import tkinter as tk
+    from tkinter import filedialog
+
+    own = parent is None
+    root = parent
+    if own:
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            root.attributes("-topmost", True)
+        except tk.TclError:
+            pass
+
+    options = {"parent": root,
+               "title": "Choose where ytgrab saves downloads",
+               "mustexist": True}
+    if start:
+        options["initialdir"] = expand(start)
+    try:
+        chosen = filedialog.askdirectory(**options)
+    except tk.TclError:
+        chosen = ""
+    finally:
+        if own:
+            try:
+                root.destroy()
+            except tk.TclError:
+                pass
+    return os.path.normpath(chosen) if chosen else ""
 
 
 # --------------------------------------------------------------------------- #

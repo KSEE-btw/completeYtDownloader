@@ -23,6 +23,7 @@ Commands from the extension
     {"cmd": "queue_status", "id": "..."}
     {"cmd": "get_config",   "id": "..."}
     {"cmd": "set_config",   "id": "...", "config": {...}}
+    {"cmd": "choose_folder","id": "...", "start": "..."}
 
 Everything the host sends back carries the id it is answering.
 """
@@ -186,6 +187,25 @@ def handle(msg: dict) -> None:
     if cmd == "set_config":
         reply(msg_id, type="config",
               config=core.save_config(msg.get("config") or {}))
+        return
+
+    if cmd == "choose_folder":
+        # Open the OS folder picker from here, not the popup: a browser page
+        # cannot see real paths, and this keeps the dialog alive even when the
+        # popup closes on blur.  The choice is persisted as the new default.
+        start = core.expand(msg.get("start")
+                            or core.load_config().get("outdir")
+                            or core.DEFAULT_CONFIG["outdir"])
+        try:
+            path = core.choose_folder(start)
+        except Exception as exc:  # noqa: BLE001
+            fail(msg_id, f"could not open the folder picker: {exc}")
+            return
+        if not path:
+            reply(msg_id, type="folder", cancelled=True)
+            return
+        reply(msg_id, type="folder", path=path,
+              config=core.save_config({"outdir": path}))
         return
 
     if cmd == "list_formats":

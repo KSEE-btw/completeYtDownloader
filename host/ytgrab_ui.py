@@ -525,6 +525,17 @@ if TK_OK:
                 ttk.Button(header, text=label, style="Yt.TButton",
                            command=cmd).pack(side="right", padx=(6, 0))
 
+            save = tk.Frame(self, bg=BG, padx=14, pady=6)
+            save.pack(fill="x")
+            tk.Label(save, text="Save to", bg=BG, fg=MUTED,
+                     font=("Segoe UI", 9)).pack(side="left")
+            self.savedir = tk.Label(save, text="", bg=BG, fg=FG, anchor="w",
+                                    font=("Segoe UI", 9))
+            self.savedir.pack(side="left", fill="x", expand=True, padx=(8, 8))
+            ttk.Button(save, text="Change\u2026", style="Yt.TButton",
+                       command=self._choose_folder).pack(side="right")
+            self._refresh_savedir()
+
             self.canvas = tk.Canvas(self, bg=BG, highlightthickness=0)
             scroll = ttk.Scrollbar(self, orient="vertical",
                                    command=self.canvas.yview)
@@ -704,6 +715,7 @@ if TK_OK:
                 if cmd == "show":
                     self.deiconify()
                     self.lift()
+                    self._refresh_savedir(fresh=True)
                 elif cmd == "quit":
                     self._quit()
                 elif cmd == "shutdown":
@@ -744,10 +756,30 @@ if TK_OK:
             self._tick(force=True)
 
         def _open_folder(self) -> None:
+            core.reset_config_cache()
             cfg = core.load_config()
             target = core.expand(cfg.get("outdir")
                                  or core.DEFAULT_CONFIG["outdir"])
             self._reveal(target)
+
+        def _refresh_savedir(self, fresh: bool = False) -> None:
+            if fresh:                       # another process may have changed it
+                core.reset_config_cache()
+            cfg = core.load_config()
+            self.savedir.configure(
+                text=core.expand(cfg.get("outdir")
+                                 or core.DEFAULT_CONFIG["outdir"]))
+
+        def _choose_folder(self) -> None:
+            cfg = core.load_config()
+            start = core.expand(cfg.get("outdir")
+                                or core.DEFAULT_CONFIG["outdir"])
+            path = core.choose_folder(start, parent=self)
+            if not path:
+                return
+            core.save_config({"outdir": path})
+            self._refresh_savedir()
+            self.footer.configure(text=f"New downloads save to {path}")
 
         def _reveal_item(self, item_id: str) -> None:
             for item in self.qm.snapshot():

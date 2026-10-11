@@ -88,6 +88,7 @@
       pingId: null,
       listId: null,
       jobId: null,
+      folderId: null,
       formats: [],
       config: {},
       targets: {},
@@ -128,6 +129,13 @@
       type: "text",
       class: "outdir",
       readonly: true,
+    });
+    const outdirBtn = el("button", {
+      class: "ghost folder",
+      type: "button",
+      text: "\u2026",
+      title: "Choose a folder on this computer",
+      onclick: chooseFolder,
     });
     const hintEl = el("div", { class: "hint" });
 
@@ -170,7 +178,7 @@
     ]);
     const outdirField = el("label", { class: "field" }, [
       el("span", { text: "Save to" }),
-      outdirInput,
+      el("div", { class: "folderrow" }, [outdirInput, outdirBtn]),
     ]);
 
     const body = el("div", { class: "body" }, [
@@ -224,6 +232,7 @@
       convertBox.disabled = busy;
       targetSel.disabled = busy || !convertBox.checked;
       probeBtn.disabled = busy;
+      outdirBtn.disabled = busy;
     }
 
     function resolvedSelection() {
@@ -398,6 +407,21 @@
         } else if (type === "error") {
           setStatus(msg.message, "bad");
           titleEl.textContent = "";
+        }
+        return;
+      }
+
+      if (state.folderId && msg.id === state.folderId) {
+        if (msg.type === "folder") {
+          if (msg.cancelled) {
+            setStatus("Kept the current folder.", "");
+          } else if (msg.path) {
+            state.config.outdir = msg.path;
+            outdirInput.value = msg.path;
+            setStatus(`Saving downloads to ${msg.path}`, "ok");
+          }
+        } else if (msg.type === "error") {
+          setStatus(msg.message, "bad");
         }
         return;
       }
@@ -607,6 +631,17 @@
 
     function openQueue() {
       send({ cmd: "open_ui", id: nextId("ui") });
+    }
+
+    function chooseFolder() {
+      if (state.running) {
+        return;
+      }
+      state.folderId = nextId("folder");
+      const start =
+        outdirInput.value || (state.config && state.config.outdir) || "";
+      setStatus("Pick a folder in the window that just opened\u2026", "");
+      send({ cmd: "choose_folder", id: state.folderId, start });
     }
 
     function showFile() {
