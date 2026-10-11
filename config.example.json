@@ -6,7 +6,17 @@
   "cookies_from_browser": "",
   "force_no_playlist": true,
   "extra_ytdlp_args": [],
+
+  "concurrent_fragments": 8,
+  "http_chunk_size": "",
+  "use_aria2c": "auto",
+  "x264_preset": "faster",
+  "x264_crf": 18,
+  "hwaccel": true,
+  "video_encoder": "libx264",
+
   "ytdlp": "",
   "ffmpeg": "",
-  "ffprobe": ""
+  "ffprobe": "",
+  "aria2c": ""
 }

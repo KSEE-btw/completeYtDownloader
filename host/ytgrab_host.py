@@ -37,7 +37,7 @@ import uuid
 # --------------------------------------------------------------------------- #
 
 APP = "ytgrab"
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 # native messaging messages are capped at 1 MiB
 MAX_MSG = 1024 * 1024 - 16
@@ -60,19 +60,37 @@ DEFAULT_CONFIG = {
     "force_no_playlist": True,
     # extra raw yt-dlp args
     "extra_ytdlp_args": [],
+
+    # ---- speed (all quality-neutral by default) ----
+    # parallel DASH fragment downloads; the single biggest download speedup
+    "concurrent_fragments": 8,
+    # split HTTP ranges for throttled hosts ("" = leave yt-dlp's default)
+    "http_chunk_size": "",
+    # auto | true | false  -- use aria2c when it is installed for multi-conn
+    "use_aria2c": "auto",
+    # x264 speed/size trade: preset does not change quality at a fixed CRF
+    "x264_preset": "faster",
+    "x264_crf": 18,
+    # decode with the GPU when possible (no effect on output)
+    "hwaccel": True,
+    # libx264 | h264_nvenc | h264_qsv | h264_amf  (hardware is faster but
+    # slightly less efficient per bitrate -- opt in explicitly)
+    "video_encoder": "libx264",
+
     # binary overrides ("" = look up on PATH)
     "ytdlp": "",
     "ffmpeg": "",
     "ffprobe": "",
+    "aria2c": "",
 }
 
-# ffmpeg recipes for each Premiere-friendly target
+# ffmpeg recipes for each Premiere-friendly target.  The h264 video side is
+# built from config (see h264_video_args) so it can use a faster preset or a
+# hardware encoder.
 TARGETS = {
     "h264": {
         "ext": "mp4",
         "label": "H.264 / AAC  (MP4)",
-        "vargs": ["-c:v", "libx264", "-preset", "medium", "-crf", "18",
-                  "-pix_fmt", "yuv420p"],
         "aargs": ["-c:a", "aac", "-b:a", "192k"],
         "extra": ["-movflags", "+faststart"],
     },
@@ -248,6 +266,7 @@ def tools() -> dict:
         "ytdlp": _which("yt-dlp", cfg.get("ytdlp", "")),
         "ffmpeg": _which("ffmpeg", cfg.get("ffmpeg", "")),
         "ffprobe": _which("ffprobe", cfg.get("ffprobe", "")),
+        "aria2c": _which("aria2c", cfg.get("aria2c", "")),
     }
 
 
@@ -256,7 +275,8 @@ def tool_versions() -> dict:
     info = {}
     for key, args in (("ytdlp", ["--version"]),
                       ("ffmpeg", ["-version"]),
-                      ("ffprobe", ["-version"])):
+                      ("ffprobe", ["-version"]),
+                      ("aria2c", ["--version"])):
         path = found.get(key, "")
         if not path:
             info[key] = {"path": "", "version": ""}
@@ -331,6 +351,69 @@ def compat_state(vfam, afam, ext: str) -> str:
     if codecs_ok:
         return "remux"       # right codecs, repackage only (fast)
     return "transcode"       # needs a real re-encode
+
+
+# --------------------------------------------------------------------------- #
+# encoder recipes
+# --------------------------------------------------------------------------- #
+
+def h264_video_args(cfg: dict):
+    """Video-encode args for the H.264 target, honouring speed settings."""
+    encoder = (cfg.get("video_encoder") or "libx264").lower()
+    if encoder == "h264_nvenc":
+        return ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr",
+                "-cq", "19", "-b:v", "0", "-pix_fmt", "yuv420p"]
+    if encoder == "h264_qsv":
+        return ["-c:v", "h264_qsv", "-global_quality", "19",
+                "-look_ahead", "1", "-pix_fmt", "nv12"]
+    if encoder == "h264_amf":
+        return ["-c:v", "h264_amf", "-quality", "balanced", "-rc", "cqp",
+                "-qp_i", "19", "-qp_p", "19", "-pix_fmt", "yuv420p"]
+    preset = str(cfg.get("x264_preset") or "faster")
+    crf = str(cfg.get("x264_crf", 18))
+    return ["-c:v", "libx264", "-preset", preset, "-crf", crf,
+            "-pix_fmt", "yuv420p"]
+
+
+def video_args_for(target: str, cfg: dict):
+    if target == "h264":
+        return h264_video_args(cfg)
+    return TARGETS[target]["vargs"]
+
+
+def audio_args_for(target: str, cfg: dict, afam):
+    """Re-encode audio only when we must; a stream copy is instant and lossless."""
+    plan = TARGETS[target]
+    if afam is None:
+        return []
+    if target == "h264":
+        if afam == "aac":
+            return ["-c:a", "copy"]
+        if afam == "mp3":
+            return ["-c:a", "copy"]          # mp3 in mp4 is legal
+    elif afam == "pcm":
+        return ["-c:a", "copy"]
+    return plan["aargs"]
+
+
+def download_speed_args(cfg: dict):
+    args = []
+    try:
+        frags = int(cfg.get("concurrent_fragments") or 1)
+    except (TypeError, ValueError):
+        frags = 1
+    if frags > 1:
+        args += ["--concurrent-fragments", str(frags)]
+    chunk = (cfg.get("http_chunk_size") or "").strip()
+    if chunk:
+        args += ["--http-chunk-size", chunk]
+    want_aria = str(cfg.get("use_aria2c", "auto")).lower()
+    if want_aria not in ("false", "0", "off", "no"):
+        if tools().get("aria2c"):
+            args += ["--downloader", "aria2c",
+                     "--downloader-args",
+                     "aria2c:-x16 -s16 -k1M --file-allocation=none"]
+    return args
 
 
 # --------------------------------------------------------------------------- #
@@ -658,9 +741,9 @@ def download_worker(msg: dict) -> None:
                         or DEFAULT_CONFIG["outdir"])
         os.makedirs(outdir, exist_ok=True)
 
-        title = safe_name(msg.get("filename") or msg.get("title") or "", "video")
-        tmpdir = os.path.join(os.environ.get("TEMP", outdir),
-                              f"ytgrab-{job.id[:8]}")
+        # Keep the scratch file inside outdir so the final move is a rename on
+        # the same volume instead of a second full copy.
+        tmpdir = os.path.join(outdir, f".ytgrab-{job.id[:8]}")
         shutil.rmtree(tmpdir, ignore_errors=True)
         os.makedirs(tmpdir, exist_ok=True)
 
@@ -668,6 +751,7 @@ def download_worker(msg: dict) -> None:
               stage_label="Downloading from the web")
 
         args = ([exe] + ytdlp_base_args(cfg, progress=True)
+                + download_speed_args(cfg)
                 + ["-f", selector,
                    "--newline",
                    "-o", os.path.join(tmpdir, "%(title)s.%(ext)s"),
@@ -733,6 +817,11 @@ def download_worker(msg: dict) -> None:
         final = unique_path(os.path.join(outdir, f"{base}.{plan['ext']}"))
         duration = info["duration"] or 0.0
 
+        # Decoding on the GPU is free speed and cannot change the output.
+        pre = ["-hwaccel", "auto"] if cfg.get("hwaccel", True) else []
+        vargs = video_args_for(target, cfg)
+        aargs = audio_args_for(target, cfg, afam)
+
         if state == "remux":
             reply(msg_id, type="stage", job=job.id, stage="remuxing",
                   stage_label="Repackaging into a Premiere container (fast)")
@@ -743,12 +832,26 @@ def download_worker(msg: dict) -> None:
         else:
             reply(msg_id, type="stage", job=job.id, stage="converting",
                   stage_label=f"Converting to {plan['label']}")
-            _ffmpeg_run(job, ["-y", "-i", source,
-                              "-map", "0:v:0", "-map", "0:a:0?"]
-                        + plan["vargs"] + plan["aargs"]
-                        + ["-map_metadata", "0", "-map_chapters", "0"]
-                        + plan["extra"] + [final],
-                        duration, "converting", msg_id)
+            convert_args = (["-y", "-i", source,
+                             "-map", "0:v:0", "-map", "0:a:0?"]
+                            + vargs + aargs
+                            + ["-map_metadata", "0", "-map_chapters", "0"]
+                            + plan["extra"] + [final])
+            try:
+                _ffmpeg_run(job, pre + convert_args, duration, "converting",
+                            msg_id)
+            except Exception as exc:
+                # Not every GPU can decode every codec; retry in software.
+                if not pre or job.cancelled:
+                    raise
+                log("hwaccel failed, retrying on CPU:", exc)
+                try:
+                    os.remove(final)
+                except OSError:
+                    pass
+                reply(msg_id, type="stage", job=job.id, stage="converting",
+                      stage_label="Converting on CPU (GPU decode unavailable)")
+                _ffmpeg_run(job, convert_args, duration, "converting", msg_id)
 
         if job.cancelled:
             raise _Cancelled()
@@ -759,15 +862,20 @@ def download_worker(msg: dict) -> None:
         if keep:
             shutil.move(source, unique_path(
                 os.path.join(outdir, os.path.basename(source))))
+        detail = f"converted from {codec_txt}"
+        if aargs == ["-c:a", "copy"]:
+            detail += " (audio copied)"
         reply(msg_id, type="done", job=job.id, path=final,
-              mode=state, codecs=codec_txt,
-              note=f"converted from {codec_txt}")
+              mode=state, codecs=codec_txt, note=detail)
     except _Cancelled:
         if tmpdir:
             shutil.rmtree(tmpdir, ignore_errors=True)
         fail(msg_id, "cancelled", job=job.id, cancelled=True)
     except Exception as exc:  # noqa: BLE001 - report everything to the UI
         log("job failed:", repr(exc))
+        if DEBUG:
+            import traceback
+            traceback.print_exc(file=sys.stderr)
         fail(msg_id, str(exc) or exc.__class__.__name__, job=job.id)
         if tmpdir:
             shutil.rmtree(tmpdir, ignore_errors=True)

@@ -90,7 +90,34 @@ package and sign it (see below).
 | `cookies_from_browser` | e.g. `firefox` for age-restricted / member videos |
 | `force_no_playlist` | refuse playlist URLs (default `true`) |
 | `extra_ytdlp_args` | extra raw yt-dlp flags |
-| `ytdlp` / `ffmpeg` / `ffprobe` | explicit binary paths (default: find on PATH) |
+| `ytdlp` / `ffmpeg` / `ffprobe` / `aria2c` | explicit binary paths (default: find on PATH) |
+
+## Speed
+
+Everything below is **quality-neutral** by default — none of it changes the
+pixels that come out.
+
+| setting | default | what it does |
+| --- | --- | --- |
+| `concurrent_fragments` | `8` | download DASH fragments in parallel (`-N`); the biggest win on segmented sites like YouTube |
+| `use_aria2c` | `auto` | if [aria2c](https://aria2.github.io/) is on PATH, use 16 connections per file |
+| `http_chunk_size` | `""` | split HTTP ranges to beat throttling (e.g. `10M`); off by default |
+| `hwaccel` | `true` | decode with the GPU; falls back to CPU automatically if the codec isn't supported |
+| `x264_preset` | `faster` | x264 speed/size trade-off. At a fixed CRF the preset does **not** change quality, only encoding time and file size |
+| `x264_crf` | `18` | quality target (lower = better/bigger). `18` is visually lossless |
+| `video_encoder` | `libx264` | `h264_nvenc` / `h264_qsv` / `h264_amf` are much faster but slightly less efficient per bitrate — opt in only if you want the speed |
+
+Two more things the host does automatically:
+
+- **No double copy.** The download lands in a scratch folder *inside* the
+  output directory, so publishing the finished file is a rename, not a second
+  full write. It also means a 4K download never needs twice the disk space.
+- **Audio is stream-copied, not re-encoded**, whenever the source audio is
+  already AAC/MP3 and the target is MP4. Instant, and no generation loss.
+
+The real fastest path is to not convert at all: the *Auto — best Premiere-safe*
+entry picks H.264/AAC, which almost every 1080p video offers.
+
 
 ## Development
 
