@@ -7,6 +7,8 @@
     ytgrab notes [VER]     (re)print the notes for a version (default: current)
     ytgrab version         print versions and paths
     ytgrab ui              open (or focus) the download queue window
+    ytgrab config          show every stored setting
+    ytgrab config KEY VAL  change one setting, e.g. cookies_from_browser
 
 Updates come from GitHub Releases for <REPO>.  One bundle carries both the
 windowless host (ytgrab-host.exe) and this CLI, so `ytgrab update` replaces
@@ -485,6 +487,34 @@ def cmd_ui(opts) -> int:
     return 0
 
 
+def _parse_setting_value(text: str):
+    """JSON when it parses (true / 18 / [] / "x"), otherwise the raw string."""
+    try:
+        return json.loads(text)
+    except (ValueError, TypeError):
+        return text
+
+
+def cmd_config(opts) -> int:
+    cfg = core.load_config()
+    if not opts.key:
+        say(json.dumps(cfg, indent=2, ensure_ascii=False))
+        return 0
+    if opts.key not in core.DEFAULT_CONFIG:
+        say(f"{APP}: unknown setting '{opts.key}'")
+        say(f"  known: {', '.join(core.DEFAULT_CONFIG)}")
+        return 1
+    if opts.value is None:
+        value = cfg[opts.key]
+        say(json.dumps(value, ensure_ascii=False)
+            if isinstance(value, (dict, list)) else str(value))
+        return 0
+    core.save_config({opts.key: _parse_setting_value(opts.value)})
+    value = core.load_config()[opts.key]
+    say(f"{opts.key} = {json.dumps(value, ensure_ascii=False)}")
+    return 0
+
+
 # --------------------------------------------------------------------------- #
 # entry point
 # --------------------------------------------------------------------------- #
@@ -505,6 +535,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("version", help="print versions and paths")
     sub.add_parser("ui", help="open the download queue window")
+
+    p_config = sub.add_parser("config", help="show or change stored settings")
+    p_config.add_argument("key", nargs="?", default="",
+                          help="setting name (omit to show them all)")
+    p_config.add_argument("value", nargs="?", default=None,
+                          help="new value (omit to print the current one)")
     return parser
 
 
@@ -519,7 +555,7 @@ def main(argv=None) -> int:
     cleanup_backups(install_dir())
 
     handlers = {"update": cmd_update, "notes": cmd_notes,
-                "version": cmd_version, "ui": cmd_ui}
+                "version": cmd_version, "ui": cmd_ui, "config": cmd_config}
     handler = handlers.get(opts.command)
     if handler is None:
         parser.print_help()

@@ -2,11 +2,13 @@
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 #
-# Walks you through four opt-in steps and does the heavy lifting:
+# Walks you through a few opt-in steps and does the heavy lifting:
 #   1. yt-dlp    -- what actually downloads the video
 #   2. ffmpeg    -- what converts it when a conversion is needed
 #   3. the ytgrab helper   (the small local program Firefox talks to)
-#   4. the browser extension -- permanently when a Mozilla-signed build is
+#   4. YouTube cookies -- reuse a signed-in browser so YouTube does not block
+#      the download with "confirm you're not a bot"
+#   5. the browser extension -- permanently when a Mozilla-signed build is
 #      present, as a temporary add-on otherwise
 #
 # Nothing needs administrator rights. Every step can be skipped, and running
@@ -161,10 +163,48 @@ function Test-FirefoxExtensionSeen {
   return $false
 }
 
+function Get-CookieBrowserName([string]$name) {
+  # yt-dlp's --cookies-from-browser spelling for a detected browser
+  switch -Wildcard ($name) {
+    "Firefox*"       { return "firefox" }
+    "Google Chrome"  { return "chrome" }
+    "Microsoft Edge" { return "edge" }
+    "Brave*"         { return "brave" }
+    "Vivaldi"        { return "vivaldi" }
+    "Opera*"         { return "opera" }
+  }
+  return ""
+}
+
+function Set-YtgrabSetting([string]$key, [string]$value) {
+  # prefer the app itself so the file format stays in one place
+  $cli = Join-Path $env:LOCALAPPDATA "ytgrab\ytgrab.exe"
+  if (-not (Test-Path $cli)) { $cli = Join-Path $here "ytgrab.exe" }
+  if (Test-Path $cli) {
+    & $cli config $key $value | Out-Null
+    if ($LASTEXITCODE -eq 0) { return }
+  }
+  # fall back to writing the file the app reads (no BOM: json.load rejects one)
+  $cfgDir  = Join-Path $env:USERPROFILE ".config\ytgrab"
+  $cfgPath = Join-Path $cfgDir "config.json"
+  New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
+  $cfg = @{}
+  if (Test-Path $cfgPath) {
+    try {
+      $existing = Get-Content $cfgPath -Raw | ConvertFrom-Json
+      foreach ($p in $existing.PSObject.Properties) { $cfg[$p.Name] = $p.Value }
+    } catch { }
+  }
+  $cfg[$key] = $value
+  $json = $cfg | ConvertTo-Json -Depth 6
+  [System.IO.File]::WriteAllText($cfgPath, $json,
+    (New-Object System.Text.UTF8Encoding($false)))
+}
+
 # --------------------------------------------------------------------------- #
 # steps
 # --------------------------------------------------------------------------- #
-$state = [ordered]@{ ytdlp = "skipped"; ffmpeg = "skipped"; host = "skipped"; extension = "skipped" }
+$state = [ordered]@{ ytdlp = "skipped"; ffmpeg = "skipped"; host = "skipped"; cookies = "skipped"; extension = "skipped" }
 
 function Step-Tool([string]$label, [string]$probe, [string]$wingetId, [string]$why, [string]$key) {
   Write-Head "$label"
@@ -211,6 +251,60 @@ function Step-Host {
   } catch {
     Write-Bad "helper install failed: $_"
   }
+}
+
+function Step-Cookies {
+  Write-Head "YouTube sign-in (cookies)"
+  Write-Info "YouTube blocks many downloads that are not tied to a signed-in browser"
+  Write-Info "('Sign in to confirm you're not a bot'). ytgrab can reuse the cookies"
+  Write-Info "from a browser you are signed into YouTube with; they stay on this PC."
+
+  $cands = @()
+  foreach ($b in (Get-Browsers)) {
+    $n = Get-CookieBrowserName $b.Name
+    if ($n) { $cands += [pscustomobject]@{ Name = $b.Name; Yt = $n } }
+  }
+
+  $default = 1
+  for ($i = 0; $i -lt $cands.Count; $i++) {
+    if ($cands[$i].Yt -eq "firefox") { $default = $i + 1; break }
+  }
+
+  if (-not $cands) {
+    Set-YtgrabSetting "cookies_from_browser" "none"
+    Write-Warn2 "no supported browser found -- leaving cookies off"
+    $state.cookies = "off (no browser found)"
+    return
+  }
+
+  if ($Yes) {
+    $choice = $cands[$default - 1]
+  } else {
+    Write-Host ""
+    Write-Info "Which browser are you signed into YouTube with? (Enter = $($cands[$default - 1].Name))"
+    for ($i = 0; $i -lt $cands.Count; $i++) {
+      Write-Host ("     [{0}] {1}" -f ($i + 1), $cands[$i].Name)
+    }
+    Write-Host "     [s] no cookies"
+    Write-Host ""
+    Write-Host "   choice [$default] " -NoNewline
+    $a = Read-Host
+    if ($a -match '^\s*(s|skip|none|no)\s*$') {
+      Set-YtgrabSetting "cookies_from_browser" "none"
+      Write-Ok "cookies off"
+      $state.cookies = "off"
+      return
+    }
+    $n = $default
+    if (-not [string]::IsNullOrWhiteSpace($a) -and -not [int]::TryParse($a, [ref]$n)) { $n = $default }
+    if ($n -lt 1 -or $n -gt $cands.Count) { $n = $default }
+    $choice = $cands[$n - 1]
+  }
+
+  Set-YtgrabSetting "cookies_from_browser" $choice.Yt
+  Write-Ok "cookies will come from $($choice.Name)"
+  Write-Dim "change it any time:  ytgrab config cookies_from_browser chrome"
+  $state.cookies = $choice.Name
 }
 
 function Step-Browser {
@@ -295,11 +389,12 @@ Write-Host ""
 Write-Host "  ytgrab installer" -ForegroundColor Cyan
 Write-Host "  YouTube -> Premiere downloads, right in your browser"
 Write-Host ""
-Write-Info "This sets up four things, in order, and you can skip any of them:"
+Write-Info "This sets up a few things, in order, and you can skip any of them:"
 Write-Info "  1. yt-dlp   (downloads the video)"
 Write-Info "  2. ffmpeg   (converts it only when the codecs require it)"
 Write-Info "  3. the ytgrab helper (the local program the browser talks to)"
-Write-Info "  4. the browser extension"
+Write-Info "  4. YouTube cookies (so YouTube does not block the download)"
+Write-Info "  5. the browser extension"
 Write-Host ""
 Write-Info "No administrator rights are needed."
 Pause-ForUser "Press Enter to begin"
@@ -317,6 +412,7 @@ if ($SkipDeps) {
 }
 
 Step-Host
+Step-Cookies
 Step-Browser
 
 # --------------------------------------------------------------------------- #
@@ -327,6 +423,7 @@ Write-Host "== summary" -ForegroundColor Cyan
 Write-Host ("   yt-dlp            : {0}" -f $state.ytdlp)
 Write-Host ("   ffmpeg            : {0}" -f $state.ffmpeg)
 Write-Host ("   ytgrab helper     : {0}" -f $state.host)
+Write-Host ("   youtube cookies   : {0}" -f $state.cookies)
 Write-Host ("   browser extension : {0}" -f $state.extension)
 Write-Host ""
 

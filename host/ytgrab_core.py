@@ -27,7 +27,7 @@ import uuid
 # --------------------------------------------------------------------------- #
 
 APP = "ytgrab"
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", APP)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -41,8 +41,11 @@ DEFAULT_CONFIG = {
     "default_target": "h264",
     # delete the non-Premiere source after a successful conversion
     "keep_original": False,
-    # cookies ("" = off) e.g. "firefox" for age-restricted / member videos
-    "cookies_from_browser": "",
+    # cookies to borrow for YouTube's "confirm you're not a bot" wall.
+    # "auto" = Firefox when it has a profile (the default); "firefox"/"chrome"/
+    # "edge"/"brave"/... = that browser; "none" = never.  See
+    # resolve_cookies_from_browser().
+    "cookies_from_browser": "auto",
     # refuse a playlist URL instead of grabbing the whole thing
     "force_no_playlist": True,
     # extra raw yt-dlp args
@@ -416,13 +419,62 @@ def download_speed_args(cfg: dict):
 # probing / format listing
 # --------------------------------------------------------------------------- #
 
+def _firefox_cookie_profile() -> str:
+    """Path to a Firefox profile that has a cookie store, or "".
+
+    Only used to make the "auto" cookie choice; yt-dlp itself locates the
+    profile from the browser name.
+    """
+    roots = []
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        roots.append(os.path.join(appdata, "Mozilla", "Firefox", "Profiles"))
+    home = os.path.expanduser("~")
+    roots.append(os.path.join(home, "Library", "Application Support",
+                              "Firefox", "Profiles"))
+    roots.append(os.path.join(home, ".mozilla", "firefox"))
+    for root in roots:
+        if not root or not os.path.isdir(root):
+            continue
+        try:
+            entries = list(os.scandir(root))
+        except OSError:
+            continue
+        for entry in entries:
+            try:
+                db = os.path.join(entry.path, "cookies.sqlite")
+                if entry.is_dir() and os.path.isfile(db):
+                    return entry.path
+            except OSError:
+                continue
+    return ""
+
+
+def resolve_cookies_from_browser(cfg: dict) -> str:
+    """Which browser yt-dlp should borrow cookies from.
+
+    Empty or "auto" (the default) uses Firefox when it actually has a cookie
+    store -- the browser ytgrab runs in, where a YouTube sign-in normally
+    lives -- so a fresh install clears YouTube's "confirm you're not a bot"
+    wall with no setup.  "none"/"off" disables it; anything else is passed
+    straight to yt-dlp (firefox, chrome, edge, brave, ...).
+    """
+    raw = str(cfg.get("cookies_from_browser") or "").strip()
+    low = raw.lower()
+    if low in ("none", "off", "no", "false", "0"):
+        return ""
+    if raw and low != "auto":
+        return raw
+    return "firefox" if _firefox_cookie_profile() else ""
+
+
 def ytdlp_base_args(cfg: dict, progress: bool = False):
     args = ["--no-warnings", "--color", "never"]
     if not progress:
         args.append("--no-progress")
     if cfg.get("force_no_playlist"):
         args.append("--no-playlist")
-    cookies = (cfg.get("cookies_from_browser") or "").strip()
+    cookies = resolve_cookies_from_browser(cfg)
     if cookies:
         args += ["--cookies-from-browser", cookies]
     args += list(cfg.get("extra_ytdlp_args") or [])

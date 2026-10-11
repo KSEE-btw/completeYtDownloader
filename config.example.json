@@ -3,7 +3,7 @@
   "default_mode": "premiere_safe",
   "default_target": "h264",
   "keep_original": false,
-  "cookies_from_browser": "",
+  "cookies_from_browser": "auto",
   "force_no_playlist": true,
   "extra_ytdlp_args": [],
 

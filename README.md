@@ -166,6 +166,8 @@ ytgrab update --check   # just report whether a newer version exists
 ytgrab notes         # (re)print the notes for the version you have
 ytgrab version       # print the installed versions and folders
 ytgrab ui            # open (or focus) the download queue window
+ytgrab config        # show every stored setting
+ytgrab config KEY VAL   # change one, e.g. cookies_from_browser chrome
 ```
 
 `ytgrab update` reads the newest [GitHub release][releases], compares it with
@@ -201,7 +203,7 @@ manifest version, the core version and that file in step.
 | `default_mode` | `premiere_safe` or `best` for the Auto entry |
 | `default_target` | `h264`, `dnxhr` or `prores` |
 | `keep_original` | keep the non-Premiere source after converting |
-| `cookies_from_browser` | e.g. `firefox` for age-restricted / member videos |
+| `cookies_from_browser` | browser to borrow cookies from: `auto` (Firefox, the default), `firefox`, `chrome`, `edge`, `brave`, … or `none`. Clears YouTube's "confirm you're not a bot" wall |
 | `force_no_playlist` | refuse playlist URLs (default `true`) |
 | `extra_ytdlp_args` | extra raw yt-dlp flags |
 | `ytdlp` / `ffmpeg` / `ffprobe` / `aria2c` | explicit binary paths (default: find on PATH) |
@@ -368,6 +370,13 @@ extension itself from `about:addons` in Firefox.
   `Get-ItemProperty HKCU:\Software\Mozilla\NativeMessagingHosts\ytgrab`
 - **"tools missing"** — `yt-dlp`/`ffmpeg` aren't on the `PATH` Firefox sees.
   `scripts\install.ps1 -InstallDeps`, or set explicit paths in the config.
+  (0.3.1+ also reads the saved `PATH` from the registry, so a tool installed by
+  `setup.ps1` is found without restarting Firefox.)
+- **"Sign in to confirm you're not a bot"** — YouTube wants a signed-in session.
+  ytgrab reuses browser cookies (`cookies_from_browser`, default `auto` =
+  Firefox). Point it at the browser you're signed into YouTube with:
+  `ytgrab config cookies_from_browser chrome` (or `firefox`, `edge`, `brave`,
+  `none`). `setup.ps1` asks during install. Installing a newer yt-dlp also helps.
 - **Nothing appears on YouTube** — the extension must be loaded in
   `about:debugging` (or permanently installed); check the browser console for a
   ytgrab error.
