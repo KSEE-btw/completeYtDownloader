@@ -53,9 +53,12 @@ $version = (Get-Content $manifestPath -Raw | ConvertFrom-Json).version
 Push-Location $root
 try {
   # --- lint (the same validator AMO runs) ------------------------------------
+  # --self-hosted is correct here: the add-on is signed on the unlisted channel
+  # and distributed by us, so a gecko.update_url is allowed. Lint otherwise
+  # assumes AMO hosts it and flags update_url as an error.
   Write-Host ""
   Write-Host "linting extension..." -ForegroundColor Cyan
-  $lint = & npx --yes "web-ext@$WebExt" lint --source-dir "$extDir" 2>&1
+  $lint = & npx --yes "web-ext@$WebExt" lint --source-dir "$extDir" --self-hosted 2>&1
   $lint | Write-Host
   if (($lint -join "`n") -match "errors\s+[1-9]") {
     throw "web-ext lint found errors -- fix them before packaging"

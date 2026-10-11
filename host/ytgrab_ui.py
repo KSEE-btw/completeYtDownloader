@@ -455,6 +455,10 @@ def make_handler(qm: QueueManager, on_ui_command):
         if cmd == "quit":
             on_ui_command("quit")
             return {"ok": True}
+        if cmd == "shutdown":
+            # stop without prompting; the updater uses this before swapping exes
+            on_ui_command("shutdown")
+            return {"ok": True}
         return {"ok": False, "error": f"unknown command: {cmd}"}
     return handler
 
@@ -702,6 +706,8 @@ if TK_OK:
                     self.lift()
                 elif cmd == "quit":
                     self._quit()
+                elif cmd == "shutdown":
+                    self._force_quit()
 
         # --- window actions ---
 
@@ -719,6 +725,14 @@ if TK_OK:
                         "Unfinished items will resume next time you open "
                         "the queue."):
                     return
+            self._closing = True
+            try:
+                self.destroy()
+            except tk.TclError:
+                pass
+
+        def _force_quit(self) -> None:
+            # like _quit but never asks: the updater is waiting on us
             self._closing = True
             try:
                 self.destroy()
@@ -761,7 +775,7 @@ if TK_OK:
 
 def _run_headless(qm: QueueManager) -> int:
     def on_command(cmd: str) -> None:
-        if cmd == "quit":
+        if cmd in ("quit", "shutdown"):
             qm.request_stop()
     server = ipc.Server(make_handler(qm, on_command), version=core.VERSION)
     server.start()

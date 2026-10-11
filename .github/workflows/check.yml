@@ -1,0 +1,29 @@
+# Cheap consistency checks that protect the release contract.
+#
+#   * the version in extension/manifest.json, the one in host/ytgrab_core.py,
+#     and the release-notes file must all agree, so `ytgrab update` and the
+#     release workflow can rely on any one of them
+#   * every release whose manifest version is new must have
+#     docs/releases/v<version>.md, because the release workflow uses it as the
+#     release body
+
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Version parity and release notes
+        shell: bash
+        run: python scripts/check_versions.py

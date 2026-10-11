@@ -40,6 +40,25 @@ if (Test-Path $key) {
 
 # --- 3. installed copy ------------------------------------------------------
 $installDir = Join-Path $env:LOCALAPPDATA "ytgrab"
+
+# --- 3b. stop the console CLI too, and drop the folder from the user PATH ---
+Get-Process ytgrab -ErrorAction SilentlyContinue |
+  Stop-Process -Force -ErrorAction SilentlyContinue
+$currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($currentPath) {
+  try {
+    $parts = @($currentPath.Split(";") |
+                 Where-Object { $_ -ne "" -and $_ -ne $installDir })
+    $newPath = $parts -join ";"
+    if ($newPath -ne $currentPath) {
+      [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+      Write-Host "removed $installDir from your user PATH"
+    }
+  } catch {
+    Write-Warning "could not update your user PATH: $_"
+  }
+}
+
 if (Test-Path $installDir) {
   Remove-Item -Path $installDir -Recurse -Force -ErrorAction SilentlyContinue
   if (Test-Path $installDir) {

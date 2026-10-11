@@ -1,11 +1,14 @@
-# ytgrab -- build a standalone executable with PyInstaller
+# ytgrab -- build the standalone Windows executables with PyInstaller
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\build_host.ps1
 #
-# Produces host\dist\ytgrab-host.exe.  One binary serves both roles: run with
-# no arguments it is the native-messaging host Firefox talks to; run with --ui
-# it is the download queue window.  The script re-runs install.ps1 so Firefox
-# launches the exe instead of the pythonw launcher.
+# Produces two binaries in host\dist:
+#   ytgrab-host.exe  windowless: the native-messaging host Firefox talks to
+#                    (no arguments) and the download queue window (--ui)
+#   ytgrab.exe       console CLI: update / notes / version / ui
+#
+# The script re-runs install.ps1 so Firefox launches the exe instead of the
+# pythonw launcher, and so the CLI lands on your PATH.
 
 [CmdletBinding()]
 param(
@@ -27,31 +30,45 @@ if (-not $Python) { throw "python not found; pass -Python C:\path\to\python.exe"
 Write-Host "ensuring PyInstaller is available..." -ForegroundColor Cyan
 & $Python -m pip install --upgrade --quiet pyinstaller
 
-$mode = if ($OneDir) { "--onedir" } else { "--onefile" }
-$spec = Join-Path $hostDir "build"
-New-Item -ItemType Directory -Force -Path $spec | Out-Null
+$mode     = if ($OneDir) { "--onedir" } else { "--onefile" }
+$distPath = Join-Path $hostDir "dist"
+$workPath = Join-Path $hostDir "build"
+$specPath = Join-Path $hostDir "build"
+New-Item -ItemType Directory -Force -Path $specPath | Out-Null
 
-$args = @(
-  "-m", "PyInstaller",
-  "--noconfirm", "--clean",
-  $mode,
+function Build-YtgrabExe {
+  param([string]$Name, [string]$Entry, [string[]]$Extra)
+  $pyArgs = @(
+    "-m", "PyInstaller",
+    "--noconfirm", "--clean",
+    $mode,
+    "--name", $Name,
+    "--distpath", $distPath,
+    "--workpath", $workPath,
+    "--specpath", $specPath
+  ) + $Extra + @((Join-Path $hostDir $Entry))
+  Write-Host "building: $Python $($pyArgs -join ' ')" -ForegroundColor Cyan
+  & $Python @pyArgs
+  if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed for $Name" }
+}
+
+# The host is a GUI app: no console flashes when Firefox launches it, and the
+# queue window does not drag a console along.
+Build-YtgrabExe -Name "ytgrab-host" -Entry "ytgrab_host.py" -Extra @(
   "--noconsole",
-  "--name", "ytgrab-host",
   "--hidden-import", "tkinter",
   "--hidden-import", "tkinter.ttk",
-  "--hidden-import", "tkinter.messagebox",
-  "--distpath", (Join-Path $hostDir "dist"),
-  "--workpath", (Join-Path $hostDir "build"),
-  "--specpath", $spec,
-  (Join-Path $hostDir "ytgrab_host.py")
+  "--hidden-import", "tkinter.messagebox"
 )
 
-Write-Host "building: $Python $($args -join ' ')" -ForegroundColor Cyan
-& $Python @args
-if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
+# The CLI is a console app: it prints progress and release notes.
+Build-YtgrabExe -Name "ytgrab" -Entry "ytgrab_cli.py" -Extra @()
 
-$exe = Join-Path $hostDir "dist\ytgrab-host.exe"
-Write-Host "built $exe" -ForegroundColor Green
+foreach ($name in @("ytgrab-host.exe", "ytgrab.exe")) {
+  $exe = Join-Path $distPath $name
+  if (-not (Test-Path $exe)) { throw "expected $exe was not produced" }
+  Write-Host "built $exe" -ForegroundColor Green
+}
 
 if ($NoInstall) {
   Write-Host "(skipping install.ps1 because -NoInstall was given)"
