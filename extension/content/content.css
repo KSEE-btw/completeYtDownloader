@@ -1,0 +1,11 @@
+/* The injected host is a zero-size anchor; everything it renders is either
+   fixed-position inside its shadow root or the floating button. */
+#ytgrab-host {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: 2147483647;
+  color-scheme: dark;
+}

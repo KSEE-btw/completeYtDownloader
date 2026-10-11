@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "ytgrab — download & convert for Premiere",
+  "version": "0.1.0",
+  "description": "Pick a format and download any video with yt-dlp, converting to a Premiere-compatible file only when the codecs require it.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "ytgrab@kunal.local",
+      "strict_min_version": "115.0"
+    }
+  },
+  "permissions": ["nativeMessaging", "storage", "activeTab"],
+  "host_permissions": [
+    "*://*.youtube.com/*",
+    "*://*.youtu.be/*"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "action": {
+    "default_title": "ytgrab",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "48": "icons/icon.svg",
+      "96": "icons/icon.svg"
+    }
+  },
+  "icons": {
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["shared/ui.js", "content/content.js"],
+      "css": ["content/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["shared/ui.css"],
+      "matches": ["*://*.youtube.com/*"]
+    }
+  ]
+}

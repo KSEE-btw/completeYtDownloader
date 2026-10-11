@@ -1,0 +1,12 @@
+{
+  "outdir": "C:\\Users\\kunal\\Downloads",
+  "default_mode": "premiere_safe",
+  "default_target": "h264",
+  "keep_original": false,
+  "cookies_from_browser": "",
+  "force_no_playlist": true,
+  "extra_ytdlp_args": [],
+  "ytdlp": "",
+  "ffmpeg": "",
+  "ffprobe": ""
+}
