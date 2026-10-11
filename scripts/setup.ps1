@@ -218,7 +218,7 @@ function Step-Browser {
   Write-Info "browsers detected on this PC:"
   for ($i = 0; $i -lt $browsers.Count; $i++) {
     $b = $browsers[$i]
-    $tag = if ($b.Kind -eq "firefox") { "supported" } else { "not supported by this build yet" }
+    $tag = if ($b.Kind -eq "firefox") { "supported" } else { "not supported (Firefox-only add-on)" }
     Write-Host ("     [{0}] {1} {2}  -- {3}" -f ($i + 1), $b.Name, $b.Version, $tag)
   }
 
@@ -243,12 +243,13 @@ function Step-Browser {
 
   Write-Host ""
   if ($choice.Kind -eq "chromium") {
-    Write-Warn2 "$($choice.Name) is not supported by this build."
-    Write-Info "ytgrab currently ships as a Firefox add-on only. Chrome, Edge, Brave,"
-    Write-Info "Vivaldi and Opera each need their own build (different background"
-    Write-Info "model, different extension id, and a store or policy install)."
-    Write-Info "Use Firefox for now -- the helper you just installed already talks to it."
-    $state.extension = "not available for $($choice.Name)"
+    Write-Warn2 "$($choice.Name): ytgrab is a Firefox add-on only."
+    Write-Info "That is deliberate, not an oversight. Chromium browsers need their own"
+    Write-Info "build (service-worker background, chrome.* APIs, a pinned extension id,"
+    Write-Info "PNG icons) and, with no store listing, a policy or Developer Mode"
+    Write-Info "install -- a much worse experience than clicking Add in Firefox."
+    Write-Info "Use Firefox: the helper you just installed already talks to it."
+    $state.extension = "Firefox only (skipped $($choice.Name))"
     return
   }
 

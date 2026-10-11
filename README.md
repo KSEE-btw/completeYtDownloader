@@ -46,6 +46,20 @@ Conversion targets: **H.264/AAC MP4** (default), **DNxHR HQ/PCM MOV**,
 - Python 3.9+ — only to install/build the companion; the shipped exe is standalone
 - Node 18+ — only to package/sign the extension (`web-ext`)
 
+## Browser support
+
+**Firefox only, deliberately.** Chrome, Edge, Brave, Vivaldi and Opera would each
+need a separate build — a service-worker background script instead of
+`background.scripts`, `chrome.*` message handlers instead of promise-returning
+`browser.*`, PNG icons, a pinned extension ID, and their own native-messaging
+origins and registry keys. On top of that, with no store listing, a *permanent*
+Chromium install means an enterprise policy or Developer Mode (with its "disable
+developer mode extensions" prompt at every launch), whereas Firefox installs the
+signed `.xpi` with one click.
+
+The interactive installer detects any of those browsers on your PC and says so
+rather than pretending to support them.
+
 ## Install
 
 ### New here? Run the interactive installer
