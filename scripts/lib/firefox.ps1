@@ -85,3 +85,22 @@ function Remove-YtgrabFirefoxPrefs {
   }
   return $changed
 }
+
+function Find-YtgrabSignedXpi {
+  # A Mozilla-signed package near the invoking script: the release bundle root,
+  # or web-ext-artifacts in a checkout. Unsigned builds are skipped on purpose,
+  # because only a signed .xpi installs permanently in release Firefox.
+  param([Parameter(Mandatory)][string]$StartDir)
+
+  $found = @()
+  foreach ($d in @($StartDir,
+                   (Join-Path $StartDir "web-ext-artifacts"),
+                   (Join-Path $StartDir "..\web-ext-artifacts"))) {
+    if (Test-Path $d) {
+      $found += Get-ChildItem (Join-Path $d "*.xpi") -ErrorAction SilentlyContinue |
+                  Where-Object { $_.Name -notlike "*unsigned*" }
+    }
+  }
+  if ($found.Count -eq 0) { return $null }
+  return ($found | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+}

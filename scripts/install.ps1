@@ -30,6 +30,10 @@ $ErrorActionPreference = "Stop"
 
 $here       = $PSScriptRoot
 $installDir = Join-Path $env:LOCALAPPDATA "ytgrab"
+
+# shared Firefox helpers (the signed-.xpi finder for the closing message)
+$lib = Join-Path $here "lib\firefox.ps1"
+if (Test-Path $lib) { . $lib }
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 
 if (-not $Quiet) {
@@ -156,20 +160,34 @@ if ($ok) {
   Write-Warning "host did not respond; see the Troubleshooting section in README.md"
 }
 
-# --- 6. next steps -----------------------------------------------------------
+# --- 6. what is left ---------------------------------------------------------
+# Deliberately honest about the one thing this script cannot do: release Firefox
+# only keeps an add-on that Mozilla has signed, and signing needs AMO keys.
 if (-not $Quiet) {
+  $signed = $null
+  if (Get-Command Find-YtgrabSignedXpi -ErrorAction SilentlyContinue) {
+    $signed = Find-YtgrabSignedXpi -StartDir $here
+  }
+
   Write-Host ""
-  Write-Host "Next steps" -ForegroundColor Cyan
-  Write-Host "  Easiest: run scripts\setup.ps1 -- it walks through everything,"
-  Write-Host "  including installing the extension permanently."
+  Write-Host "Helper done -- the extension is the last piece." -ForegroundColor Cyan
   Write-Host ""
-  Write-Host "  Or by hand:"
-  Write-Host "    1. Install the extension:"
-  Write-Host "         about:addons  -> gear icon -> 'Install Add-on From File...'"
-  Write-Host "         (or drag a signed ytgrab .xpi into a Firefox window)"
-  Write-Host "       No signed .xpi? Load it temporarily instead:"
-  Write-Host "         about:debugging#/runtime/this-firefox -> 'Load Temporary Add-on...'"
-  Write-Host "         -> pick ytgrab-<version>.xpi (or extension\manifest.json in a checkout)"
-  Write-Host "    2. Open a YouTube video and click the blue arrow button."
+  if ($signed) {
+    Write-Host "  Signed package found: $(Split-Path -Leaf $signed)"
+    Write-Host "  Drag it into a Firefox window, or use"
+    Write-Host "  about:addons -> gear -> 'Install Add-on From File...'"
+    Write-Host "  Firefox will keep it across restarts."
+  } else {
+    Write-Host "  No Mozilla-signed .xpi is next to this script, and release Firefox"
+    Write-Host "  will not keep an add-on it cannot verify. Two options:"
+    Write-Host ""
+    Write-Host "    permanent : make one once, with free AMO keys --"
+    Write-Host "                  scripts\package.ps1 -Sign      (see README.md)"
+    Write-Host "    right now : about:debugging#/runtime/this-firefox"
+    Write-Host "                  -> 'Load Temporary Add-on...' -> extension\manifest.json"
+    Write-Host "                  (works instantly; goes away when Firefox quits)"
+  }
+  Write-Host ""
+  Write-Host "Then open any YouTube video and click the blue arrow button."
   Write-Host ""
 }

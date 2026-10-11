@@ -6,7 +6,8 @@
 #   1. yt-dlp    -- what actually downloads the video
 #   2. ffmpeg    -- what converts it when a conversion is needed
 #   3. the ytgrab helper   (the small local program Firefox talks to)
-#   4. the browser extension, installed permanently
+#   4. the browser extension -- permanently when a Mozilla-signed build is
+#      present, as a temporary add-on otherwise
 #
 # Nothing needs administrator rights. Every step can be skipped, and running
 # it again is safe -- anything already installed is detected and left alone.
@@ -24,6 +25,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $here = $PSScriptRoot
+
+# shared Firefox helpers (signed-.xpi finder)
+$lib = Join-Path $here "lib\firefox.ps1"
+if (Test-Path $lib) { . $lib }
 
 # --------------------------------------------------------------------------- #
 # console helpers
@@ -121,23 +126,6 @@ function Get-Browsers {
     }
   }
   return $found
-}
-
-function Find-SignedXpi {
-  $dirs = @(
-    $here,
-    (Join-Path $here "web-ext-artifacts"),
-    (Join-Path $here "..\web-ext-artifacts")
-  )
-  $all = @()
-  foreach ($d in $dirs) {
-    if (Test-Path $d) {
-      $all += Get-ChildItem (Join-Path $d "*.xpi") -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -notlike "*unsigned*" }
-    }
-  }
-  if (-not $all) { return $null }
-  return ($all | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
 }
 
 function Test-FirefoxExtensionSeen {
@@ -258,7 +246,7 @@ function Step-Browser {
     Write-Dim "if it does not appear in about:addons, continue below"
   }
 
-  $xpi = Find-SignedXpi
+  $xpi = Find-YtgrabSignedXpi -StartDir $here
   if (-not $xpi) {
     Write-Warn2 "no Mozilla-signed .xpi found next to this installer"
     Write-Info "Firefox only keeps an add-on permanently if Mozilla signed it."
