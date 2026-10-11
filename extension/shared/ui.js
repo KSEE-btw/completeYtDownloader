@@ -28,8 +28,6 @@
         node.className = value;
       } else if (key === "text") {
         node.textContent = value;
-      } else if (key === "html") {
-        node.innerHTML = value;
       } else if (key.startsWith("on") && typeof value === "function") {
         node.addEventListener(key.slice(2).toLowerCase(), value);
       } else {
@@ -253,26 +251,25 @@
       const value = formatSel.value || "";
       const convert = convertBox.checked;
       const entry = selectedFormat();
-      let tag = "";
+      let tag = null;               // { cls, label } or null
       let text = "";
 
       if (value === "auto:premiere_safe") {
-        tag = '<span class="tag ok">auto</span>';
+        tag = { cls: "ok", label: "auto" };
         text = "Best H.264 + AAC MP4 available \u2014 normally nothing to convert.";
       } else if (value === "auto:best") {
-        tag = '<span class="tag warn">auto</span>';
+        tag = { cls: "warn", label: "auto" };
         text = "Highest quality; converts only if the codec isn't Premiere-friendly.";
       } else if (entry) {
-        const info = COMPAT[entry.compat] || COMPAT.transcode;
         const size = entry.size ? ` \u00b7 ${fmtBytes(entry.size)}` : "";
         if (entry.compat === "ok") {
-          tag = '<span class="tag ok">ready</span>';
+          tag = { cls: "ok", label: "ready" };
           text = `${entry.label}${size} \u2014 already Premiere-compatible.`;
         } else if (entry.compat === "remux") {
-          tag = '<span class="tag warn">repack</span>';
+          tag = { cls: "warn", label: "repack" };
           text = `${entry.label}${size} \u2014 right codecs, repackaged into MP4 (fast).`;
         } else {
-          tag = '<span class="tag bad">convert</span>';
+          tag = { cls: "bad", label: "convert" };
           text = `${entry.label}${size} \u2014 ${entry.vcodec || "?"} \u2192 ` +
             `${targetLabel()} (re-encode).`;
         }
@@ -280,13 +277,17 @@
           text += " Conversion is off, so it downloads as-is.";
         }
       }
-      hintEl.innerHTML = tag + escapeHtml(text);
-    }
-
-    function escapeHtml(s) {
-      return String(s).replace(/[&<>"]/g, (c) =>
-        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])
-      );
+      // textContent only -- never innerHTML (Trusted Types on YouTube).
+      hintEl.replaceChildren();
+      if (tag) {
+        const badge = document.createElement("span");
+        badge.className = "tag " + tag.cls;
+        badge.textContent = tag.label;
+        hintEl.appendChild(badge);
+      }
+      if (text) {
+        hintEl.appendChild(document.createTextNode(text));
+      }
     }
 
     // --- native communication ---
@@ -430,10 +431,15 @@
           pinfoLeft.textContent = msg.mode === "none" ? "Done" : `Done (${msg.mode})`;
           pinfoRight.textContent = "";
           setStatus("", "");
-          statusEl.innerHTML =
-            `<span class="ok">Saved \u2014 ${escapeHtml(msg.codecs || "")}` +
-            `${msg.note ? " \u00b7 " + escapeHtml(msg.note) : ""}</span>` +
-            `<span class="path">${escapeHtml(msg.path || "")}</span>`;
+          statusEl.replaceChildren();
+          const savedSpan = document.createElement("span");
+          savedSpan.className = "ok";
+          savedSpan.textContent = `Saved \u2014 ${msg.codecs || ""}` +
+            (msg.note ? " \u00b7 " + msg.note : "");
+          const pathSpan = document.createElement("span");
+          pathSpan.className = "path";
+          pathSpan.textContent = msg.path || "";
+          statusEl.append(savedSpan, pathSpan);
           statusEl.className = "status ok";
           statusEl.dataset.path = msg.path || "";
           openBtn.hidden = false;

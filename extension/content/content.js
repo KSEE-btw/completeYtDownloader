@@ -54,17 +54,43 @@
     host.id = "ytgrab-host";
     document.documentElement.appendChild(host);
     shadow = host.attachShadow({ mode: "open" });
-    shadow.innerHTML =
-      `<link rel="stylesheet" href="${api.runtime.getURL("shared/ui.css")}">` +
-      `<style>${STYLE}</style>` +
-      `<div class="fab" title="ytgrab">` +
-      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ` +
-      `stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">` +
-      `<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/>` +
-      `<path d="M5 21h14"/></svg></div>` +
-      `<div class="panel" hidden></div>`;
-    panel = shadow.querySelector(".panel");
-    shadow.querySelector(".fab").addEventListener("click", toggle);
+
+    // Everything below is built with DOM APIs, never innerHTML.  Sites like
+    // YouTube enforce Trusted Types (require-trusted-types-for 'script'), and
+    // a string assigned to an HTML sink there throws and aborts the whole
+    // injection -- which would leave no button at all.
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = api.runtime.getURL("shared/ui.css");
+
+    const style = document.createElement("style");
+    style.textContent = STYLE;
+
+    const fab = document.createElement("div");
+    fab.className = "fab";
+    fab.title = "ytgrab";
+
+    const SVG = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2.2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    for (const d of ["M12 3v12", "M7 10l5 5 5-5", "M5 21h14"]) {
+      const path = document.createElementNS(SVG, "path");
+      path.setAttribute("d", d);
+      svg.appendChild(path);
+    }
+    fab.appendChild(svg);
+
+    panel = document.createElement("div");
+    panel.className = "panel";
+    panel.hidden = true;
+
+    shadow.append(link, style, fab, panel);
+    fab.addEventListener("click", toggle);
   }
 
   function toggle() {
