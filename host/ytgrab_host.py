@@ -1034,7 +1034,14 @@ def _cli() -> int:
     return 0
 
 
+CLI_FLAGS = ("--ping", "--list", "--config-path", "-h", "--help")
+
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
+    # Firefox launches the host with its own arguments (on Windows the parent
+    # window handle), so "any argv present means CLI" is wrong: the process
+    # would run the test CLI, argparse would reject the argument, and the host
+    # would exit instantly -- which the extension sees as "host disconnected".
+    # Only use the CLI when one of our own flags is actually present.
+    if any(arg in CLI_FLAGS for arg in sys.argv[1:]):
         sys.exit(_cli())
     main()
