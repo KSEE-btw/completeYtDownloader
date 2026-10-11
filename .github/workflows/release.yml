@@ -13,6 +13,10 @@
 #
 # The release body comes from docs/releases/v<version>.md -- the same document
 # the bundle ships as RELEASE-NOTES.md and `ytgrab update` prints.
+#
+# If the version's release already has assets (for example a bundle that was
+# built and signed locally, then published with `gh release create` + `gh
+# release upload`), the workflow exits early instead of rebuilding over it.
 
 name: release
 
@@ -32,16 +36,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Skip if the release already has assets
+        id: existing
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = (Get-Content extension/manifest.json -Raw | ConvertFrom-Json).version
+          $tag = "v$v"
+          $assets = gh release view $tag --json assets -q '.assets[].name' 2>$null
+          if ($LASTEXITCODE -eq 0 -and $assets -and "$assets" -ne "[]") {
+            Write-Host "release $tag already has assets - skipping the build"
+            "skip=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            Write-Host "release $tag has no assets - building"
+            "skip=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
       - uses: actions/setup-python@v5
+        if: steps.existing.outputs.skip != 'true'
         with:
           python-version: "3.11"
 
       - uses: actions/setup-node@v4
+        if: steps.existing.outputs.skip != 'true'
         with:
           node-version: "20"
 
       - name: Read the version
         id: version
+        if: steps.existing.outputs.skip != 'true'
         shell: pwsh
         run: |
           $v = (Get-Content extension/manifest.json -Raw | ConvertFrom-Json).version
@@ -49,6 +73,7 @@ jobs:
           Write-Host "version = $v"
 
       - name: Build host and bundle
+        if: steps.existing.outputs.skip != 'true'
         shell: pwsh
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
@@ -63,6 +88,7 @@ jobs:
           }
 
       - uses: actions/upload-artifact@v4
+        if: steps.existing.outputs.skip != 'true'
         with:
           name: ytgrab-windows
           path: |
@@ -72,7 +98,7 @@ jobs:
             release/updates.json
 
       - name: Attach the bundle to the release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && steps.existing.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
           body_path: docs/releases/v${{ steps.version.outputs.version }}.md
@@ -83,7 +109,7 @@ jobs:
             release/updates.json
 
       - name: Refresh the Firefox update manifest on main
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && steps.existing.outputs.skip != 'true'
         continue-on-error: true
         shell: pwsh
         run: |
