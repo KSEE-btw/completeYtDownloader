@@ -261,7 +261,14 @@
         text = "Highest quality; converts only if the codec isn't Premiere-friendly.";
       } else if (entry) {
         const size = entry.size ? ` \u00b7 ${fmtBytes(entry.size)}` : "";
-        if (entry.compat === "ok") {
+        if (entry.kind === "video") {
+          tag = { cls: "warn", label: "audio+" };
+          text = `${entry.label}${size} \u2014 video only; the best audio ` +
+            `track is downloaded and muxed in.`;
+          text += convert
+            ? ` Converts to ${targetLabel()} if needed.`
+            : " Conversion is off, so it lands as the muxed file (usually MKV).";
+        } else if (entry.compat === "ok") {
           tag = { cls: "ok", label: "ready" };
           text = `${entry.label}${size} \u2014 already Premiere-compatible.`;
         } else if (entry.compat === "remux") {
@@ -272,7 +279,7 @@
           text = `${entry.label}${size} \u2014 ${entry.vcodec || "?"} \u2192 ` +
             `${targetLabel()} (re-encode).`;
         }
-        if (!convert && entry.compat !== "ok") {
+        if (!convert && entry.compat !== "ok" && entry.kind !== "video") {
           text += " Conversion is off, so it downloads as-is.";
         }
       }

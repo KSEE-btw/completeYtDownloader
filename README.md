@@ -203,6 +203,7 @@ manifest version, the core version and that file in step.
 | `default_mode` | `premiere_safe` or `best` for the Auto entry |
 | `default_target` | `h264`, `dnxhr` or `prores` |
 | `keep_original` | keep the non-Premiere source after converting |
+| `ensure_audio` | when a picked format is video-only, also fetch the best audio and mux it in (default `true`) |
 | `cookies_from_browser` | browser to borrow cookies from: `auto` (Firefox, the default), `firefox`, `chrome`, `edge`, `brave`, … or `none`. Clears YouTube's "confirm you're not a bot" wall |
 | `force_no_playlist` | refuse playlist URLs (default `true`) |
 | `extra_ytdlp_args` | extra raw yt-dlp flags |

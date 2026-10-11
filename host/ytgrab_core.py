@@ -27,7 +27,7 @@ import uuid
 # --------------------------------------------------------------------------- #
 
 APP = "ytgrab"
-VERSION = "0.3.2"
+VERSION = "0.3.3"
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", APP)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -41,6 +41,9 @@ DEFAULT_CONFIG = {
     "default_target": "h264",
     # delete the non-Premiere source after a successful conversion
     "keep_original": False,
+    # a picked format that has no audio of its own (video-only) also pulls the
+    # best audio and muxes them into one file, so nothing lands silent
+    "ensure_audio": True,
     # cookies to borrow for YouTube's "confirm you're not a bot" wall.
     # "auto" = Firefox when it has a profile (the default); "firefox"/"chrome"/
     # "edge"/"brave"/... = that browser; "none" = never.  See
@@ -782,6 +785,25 @@ def _last_error(tail) -> str:
     return tail[-1] if tail else ""
 
 
+_BARE_FORMAT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def ensure_audio_selector(selector: str, enabled: bool = True) -> str:
+    """Make an explicit video-only pick carry the best audio track.
+
+    The UI's explicit choices are bare format ids, and a video-only one has no
+    sound of its own, so "160" downloads silently.  yt-dlp resolves
+    "160+ba/160" to video + best audio when 160 is video-only, and to 160 alone
+    when it already carries audio (or when the video is genuinely silent), so
+    this is a no-op for muxed and audio-only picks.  Auto selectors already
+    contain "+ba" and are left untouched.
+    """
+    sel = (selector or "").strip()
+    if not enabled or sel == "auto" or not _BARE_FORMAT_RE.match(sel):
+        return selector
+    return f"{sel}+ba/{sel}"
+
+
 def run_download(job: Job, spec: dict, emit) -> dict:
     """Download (and convert) one item.
 
@@ -801,6 +823,10 @@ def run_download(job: Job, spec: dict, emit) -> dict:
     if not selector or selector == "auto":
         mode = spec.get("mode") or cfg.get("default_mode", "premiere_safe")
         selector = (SELECTOR_BEST if mode == "best" else SELECTOR_PREMIERE)
+    # An explicit pick like "137" is often video-only (no sound of its own).
+    # Appending "+ba" downloads the best audio alongside it and lets yt-dlp
+    # mux the two in the same task; muxed/audio picks are unaffected.
+    selector = ensure_audio_selector(selector, cfg.get("ensure_audio", True))
 
     outdir = expand(spec.get("outdir") or cfg.get("outdir")
                     or DEFAULT_CONFIG["outdir"])
@@ -876,9 +902,15 @@ def run_download(job: Job, spec: dict, emit) -> dict:
         if not want_convert or state == "ok":
             dest = unique_path(os.path.join(outdir, os.path.basename(source)))
             shutil.move(source, dest)
+            if not want_convert:
+                # Turning conversion off used to mean "already compatible", but
+                # a video-only pick now merges in Opus audio, which is not.
+                note = ("already Premiere-compatible" if state == "ok"
+                        else "conversion off \u2014 saved as downloaded")
+            else:
+                note = "no conversion needed"
             return {"path": dest, "mode": "none", "codecs": codec_txt,
-                    "note": ("already Premiere-compatible"
-                             if not want_convert else "no conversion needed")}
+                    "note": note}
 
         plan = TARGETS[target]
         base = os.path.splitext(os.path.basename(source))[0]
