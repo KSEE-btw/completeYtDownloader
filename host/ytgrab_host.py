@@ -283,7 +283,8 @@ def tool_versions() -> dict:
             continue
         try:
             out = subprocess.run([path] + args, capture_output=True, text=True,
-                                 timeout=20, errors="replace").stdout
+                                 timeout=20, errors="replace",
+                                 **child_kwargs()).stdout
             info[key] = {"path": path,
                          "version": out.strip().splitlines()[0] if out else ""}
         except Exception as exc:
@@ -442,7 +443,8 @@ def run_ytdlp_json(url: str, timeout: int = 150) -> dict:
             + ["--dump-single-json", "--skip-download", url])
     log("probe:", " ".join(args))
     proc = subprocess.run(args, capture_output=True, text=True,
-                          encoding="utf-8", errors="replace", timeout=timeout)
+                          encoding="utf-8", errors="replace", timeout=timeout,
+                          **child_kwargs())
     if proc.returncode != 0 or not proc.stdout.strip():
         tail = (proc.stderr or "").strip().splitlines()
         raise RuntimeError(tail[-1] if tail else "yt-dlp could not read this URL")
@@ -577,7 +579,7 @@ def kill_tree(proc) -> None:
     try:
         if os.name == "nt":
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                           capture_output=True)
+                           capture_output=True, **child_kwargs())
         else:
             proc.terminate()
     except Exception:
@@ -643,7 +645,8 @@ def probe_file(path: str) -> dict:
 
     def _run(extra):
         return subprocess.run(args + extra, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=120)
+                              encoding="utf-8", errors="replace", timeout=120,
+                              **child_kwargs())
 
     proc = _run([])
     if proc.returncode != 0:
