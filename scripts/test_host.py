@@ -3,7 +3,12 @@
 
     python scripts/test_host.py                # ping
     python scripts/test_host.py URL            # list formats
-    python scripts/test_host.py URL dl 137     # download format 137
+    python scripts/test_host.py URL dl 137     # queue a download (format 137)
+    python scripts/test_host.py ui             # open/focus the queue window
+    python scripts/test_host.py qs             # queue status
+
+A download is handed to the queue window, so the reply is a short "queued"
+message rather than a stream of progress.
 """
 import json
 import os
@@ -43,6 +48,10 @@ def main():
 
     if not url:
         send(proc, {"cmd": "ping", "id": "p1"})
+    elif url == "ui":
+        send(proc, {"cmd": "open_ui", "id": "u1"})
+    elif url == "qs":
+        send(proc, {"cmd": "queue_status", "id": "q1"})
     elif len(sys.argv) > 2 and sys.argv[2] == "dl":
         send(proc, {"cmd": "download", "id": "d1", "url": url,
                     "format": sys.argv[3] if len(sys.argv) > 3 else "",

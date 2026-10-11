@@ -1,7 +1,7 @@
 # Builds the Windows host + extension bundle and attaches it to a GitHub Release.
 #
 #   * manual run : Actions -> release -> Run workflow
-#   * tag run    : git tag v0.2.3 && git push origin v0.2.3
+#   * tag run    : git tag v0.3.0 && git push origin v0.3.0
 #
 # A single, permanently-installable .xpi requires Mozilla signing. Add these
 # repository secrets to enable it:

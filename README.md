@@ -9,18 +9,31 @@ Pick a VP9/AV1 stream (or 1440p/4K, which only exist as VP9/AV1) and the host
 re-encodes it to H.264/AAC on the way to disk.
 
 ```
-┌────────────────────── Firefox ──────────────────────┐
-│  content script  ─┐                                  │
-│  toolbar popup   ─┼─▶ background broker ─ native ───▶ │  ytgrab-host.exe
-└───────────────────┘      (ports)       messaging     └──────┬───────
-                                                              │
-                                                    yt-dlp ───┴─── ffmpeg
+┌──────────────────────── Firefox ─────────────────────────┐
+│  content script  ─┐                                       │
+│  toolbar popup   ─┼─▶ background broker ─ native ───▶      │  ytgrab-host.exe
+└───────────────────┘      (ports)       messaging      ────┘   (messaging bridge)
+                                                                       │
+                                                                   loopback IPC
+                                                                       │
+                                                       ┌───────────────▼────────────────┐
+                                                       │  ytgrab queue window (Tkinter) │
+                                                       │  owns the queue + progress     │
+                                                       └───────────────┬────────────────┘
+                                                                       │
+                                                             yt-dlp ───┴─── ffmpeg
 ```
 
 A browser extension can't execute `yt-dlp` itself, so the extension talks to a
-small local companion (a single ~6 MB Python executable) over Firefox's
+small local companion (a single Python executable) over Firefox's
 [Native messaging](https://developer.mozilla.org/docs/Mozilla/Add-ons/WebExtensions/Native_messaging)
-channel. The companion is what actually downloads, probes and converts.
+channel. That companion is just a **bridge**: it hands each download to a
+**queue window** that owns the work, so closing the popup — or the whole
+browser — never interrupts a download. The companion is what actually
+downloads, probes and converts.
+
+The queue window is the *same* executable in another mode
+(`ytgrab-host.exe --ui`), so there is still only one file to build and install.
 
 ## How the "convert only when needed" logic works
 
@@ -28,10 +41,10 @@ channel. The companion is what actually downloads, probes and converts.
    - `ok` — H.264/HEVC video + AAC/MP3/PCM audio in MP4/MOV → Premiere imports it directly
    - `repack` — right codecs, wrong container (e.g. H.264 in MKV) → remuxed in seconds, no re-encode
    - `convert` — VP9 / AV1 / Opus / Vorbis → real re-encode
-2. **Download.** With the *Auto — best Premiere-safe* entry selected, the host
+2. **Download.** With the *Auto — best Premiere-safe* entry selected, ytgrab
    downloads the best **H.264 + AAC** stream YouTube offers, so the common
    1080p case never converts.
-3. **Verify, then convert.** After the download the host runs `ffprobe` on the
+3. **Verify, then convert.** After the download ytgrab runs `ffprobe` on the
    *actual file* and only converts if the codecs aren't Premiere-friendly.
    The checkbox just says "if needed".
 
@@ -43,7 +56,9 @@ Conversion targets: **H.264/AAC MP4** (default), **DNxHR HQ/PCM MOV**,
 - Windows 10/11, Firefox 115+
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp), `ffmpeg` and `ffprobe` on `PATH`
   (`winget install yt-dlp.yt-dlp Gyan.FFmpeg`)
-- Python 3.9+ — only to install/build the companion; the shipped exe is standalone
+- Python 3.9+ — only to install/build the companion; the shipped exe is
+  standalone. The queue window uses Tkinter, which ships with the python.org
+  installer.
 - Node 18+ — only to package/sign the extension (`web-ext`)
 
 ## Browser support
@@ -118,7 +133,27 @@ For a permanent install, sign it once — see
 - Pick a format — each entry is tagged `Premiere ✓`, `repack` or `convert`.
 - Leave **"Convert to a Premiere-compatible file — only if needed"** ticked
   and choose a target codec.
-- **Download** → progress bar → **Show file** opens Explorer with the file selected.
+- **Download** hands the job to the queue window; the panel confirms *"Added to
+  the queue"*. Use **Open queue window** to watch it.
+
+### The queue window
+
+Downloads run in a small desktop window, not in the popup — so the progress you
+started survives closing the popup, and even closing Firefox.
+
+- Each row shows the title, live status, a progress bar, speed and ETA, plus
+  **Cancel** / **Retry** / **Remove** / **Show file** as appropriate.
+- **Closing the window keeps everything running** — it minimises to the taskbar.
+  Reopen it from the **Open queue window** button, or by running
+  `%LOCALAPPDATA%\ytgrab\ytgrab-host.exe --ui`.
+- **Quit** (in the window, or `Ctrl+Q`) stops ytgrab. Unfinished items are saved
+  and **resume the next time the window starts**; finished items stay as
+  history.
+- **Open folder** jumps to your output directory; **Clear finished** tidies the
+  history away.
+
+The queue lives in `~/.config/ytgrab/queue.json`. Deleting it just forgets the
+history — no downloads are harmed.
 
 ## Configuration
 
@@ -170,10 +205,25 @@ python host\ytgrab_host.py --ping                  # tools + config
 python host\ytgrab_host.py --list "URL"            # raw format JSON
 python scripts\show_formats.py "URL"               # pretty format table
 python scripts\test_host.py "URL"                  # talk the native protocol
+python scripts\test_host.py ui                     # ask the host to open the window
+python host\ytgrab_ui.py --ui                      # open the queue window directly
+python host\ytgrab_ui.py --headless                # run the queue with no window
+python host\ytgrab_ui.py --smoke                   # build + destroy the window (CI)
+python host\ytgrab_ui.py --self-test-url "URL"     # end-to-end: queue -> download
 ```
 
-`scripts/test_host.py` speaks the real native-messaging framing, so it exercises
-exactly what Firefox does without opening a browser.
+The code is split into three modules under `host\`:
+
+| file | role |
+| --- | --- |
+| `ytgrab_core.py` | config, tool discovery, codec rules and the download pipeline (shared) |
+| `ytgrab_ipc.py` | loopback JSON IPC + the `runtime.json` handshake |
+| `ytgrab_host.py` | the native-messaging bridge (and `--ui` dispatch) |
+| `ytgrab_ui.py` | the queue window, queue model and persistence |
+
+`scripts\test_host.py` speaks the real native-messaging framing, so it exercises
+exactly what Firefox does without opening a browser. A `download` now returns a
+short `queued` reply instead of streaming progress.
 
 ## Make it permanent (so it survives a Firefox restart)
 
