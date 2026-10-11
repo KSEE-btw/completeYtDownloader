@@ -11,6 +11,7 @@
     return;
   }
   window.__ytgrabLoaded = true;
+  console.info("[ytgrab] content script running");
 
   const STYLE = `
     :host { all: initial; }
@@ -129,7 +130,13 @@
     if (!document.documentElement) {
       return;
     }
-    build();
+    try {
+      build();
+    } catch (err) {
+      console.error("[ytgrab] could not inject the panel:", err);
+      return;
+    }
+    console.info("[ytgrab] button added to", location.pathname);
     window.addEventListener("yt-navigate-finish", onNavigate);
     let last = location.href;
     setInterval(() => {
