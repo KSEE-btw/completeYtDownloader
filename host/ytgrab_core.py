@@ -27,7 +27,7 @@ import uuid
 # --------------------------------------------------------------------------- #
 
 APP = "ytgrab"
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", APP)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -173,6 +173,53 @@ def reset_config_cache() -> None:
 # tool discovery
 # --------------------------------------------------------------------------- #
 
+def _path_dirs() -> list[str]:
+    """Directories to search for tools.
+
+    Firefox launches the native host with the environment Firefox had when it
+    started, so tools installed since then (winget, setx, installer scripts)
+    may not be on the inherited PATH yet.  On Windows we merge the persisted
+    copy of the PATH stored in the registry (user first, then machine) with the
+    inherited one, so freshly installed yt-dlp/ffmpeg are found without making
+    the user restart the browser.
+    """
+    seen: dict[str, bool] = {}
+    merged: list[str] = []
+
+    def add(value) -> None:
+        if not value:
+            return
+        for directory in str(value).split(os.pathsep):
+            directory = directory.strip('"')
+            if not directory:
+                continue
+            key = os.path.normcase(os.path.abspath(directory))
+            if key in seen:
+                continue
+            seen[key] = True
+            merged.append(os.path.expandvars(directory))
+
+    add(os.environ.get("PATH"))
+    if os.name == "nt":
+        try:
+            import winreg
+        except ImportError:                 # pragma: no cover - Windows-only
+            winreg = None
+        if winreg is not None:
+            locations = (
+                (winreg.HKEY_CURRENT_USER, r"Environment"),
+                (winreg.HKEY_LOCAL_MACHINE,
+                 r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+            )
+            for root, sub in locations:
+                try:
+                    with winreg.OpenKey(root, sub) as key:
+                        add(winreg.QueryValueEx(key, "Path")[0])
+                except OSError:
+                    continue
+    return merged
+
+
 def _which(name: str, override: str = "") -> str:
     if override:
         candidate = os.path.expandvars(os.path.expanduser(override))
@@ -183,13 +230,13 @@ def _which(name: str, override: str = "") -> str:
         return found
     if os.name == "nt":
         exe = name if name.lower().endswith(".exe") else name + ".exe"
-        for base in (
+        for base in _path_dirs() + [
             os.path.join(os.environ.get("LOCALAPPDATA", ""),
                          r"Microsoft\WinGet\Links"),
             os.path.join(os.environ.get("LOCALAPPDATA", ""),
                          r"Microsoft\WindowsApps"),
             r"C:\ffmpeg\bin",
-        ):
+        ]:
             candidate = os.path.join(base, exe)
             if os.path.isfile(candidate):
                 return candidate

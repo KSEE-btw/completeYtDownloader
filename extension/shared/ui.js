@@ -366,7 +366,11 @@
           const missing = !(msg.tools.ytdlp || {}).path
             ? "yt-dlp"
             : "ffmpeg";
-          setStatus(`${missing} not found on PATH.`, "bad");
+          setStatus(
+            `${missing} not found on PATH.` +
+              " If you just installed it, fully restart Firefox.",
+            "bad"
+          );
         }
         fillTargets();
         outdirInput.value = state.config.outdir || "";
