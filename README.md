@@ -48,7 +48,24 @@ Conversion targets: **H.264/AAC MP4** (default), **DNxHR HQ/PCM MOV**,
 
 ## Install
 
-### 1. The companion host (once per machine)
+### New here? Run the interactive installer
+
+```powershell
+cd ytgrab
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
+```
+
+It walks through four opt-in steps — **yt-dlp**, then **ffmpeg**, then the
+local helper, then the extension — detecting and skipping whatever you already
+have, and asking before it downloads anything. Finally it lists the browsers on
+the machine and asks which one to install ytgrab into. No administrator rights,
+and it is safe to re-run.
+
+Unattended equivalent: `scripts\setup.ps1 -Yes -Browser firefox`.
+
+The sections below are those same steps by hand.
+
+### The companion host (once per machine)
 
 ```powershell
 cd ytgrab
@@ -69,7 +86,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -InstallDeps
 (No exe builder handy? Plain `scripts\install.ps1` falls back to a `pythonw`
 launcher, so the host still runs straight from the Python source.)
 
-### 2. The extension
+### The extension
 
 For a quick trial (this vanishes the moment Firefox quits):
 
@@ -199,10 +216,10 @@ host exe, `install.ps1` / `uninstall.ps1`, the signed `.xpi`, and a
 their steps are:
 
 1. unzip it
-2. `powershell -ExecutionPolicy Bypass -File install.ps1 -InstallDeps`
-   *(no admin rights; `-InstallDeps` fetches yt-dlp + ffmpeg via `winget`)*
-3. drag the `.xpi` into Firefox
-4. click the blue arrow on any YouTube video
+2. `powershell -ExecutionPolicy Bypass -File setup.ps1`
+   *(installs yt-dlp, then ffmpeg, then the helper, then asks which browser to
+   add the extension to — no admin rights, every step is a prompt)*
+3. click the blue arrow on any YouTube video
 
 The repo also ships `.github/workflows/release.yml`, which runs exactly this on a
 `v*` tag and attaches the zip to a GitHub Release. Add `AMO_JWT_ISSUER` and

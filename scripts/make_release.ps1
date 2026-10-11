@@ -60,6 +60,7 @@ if (-not (Test-Path $exe)) { throw "host exe not found at $exe (build it first)"
 
 Copy-Item $exe                                    (Join-Path $stage "ytgrab-host.exe")  -Force
 Copy-Item (Join-Path $root "host\ytgrab_host.py") (Join-Path $stage "ytgrab_host.py")   -Force
+Copy-Item (Join-Path $PSScriptRoot "setup.ps1")     (Join-Path $stage "setup.ps1")     -Force
 Copy-Item (Join-Path $PSScriptRoot "install.ps1") (Join-Path $stage "install.ps1")     -Force
 Copy-Item (Join-Path $PSScriptRoot "uninstall.ps1") (Join-Path $stage "uninstall.ps1") -Force
 
@@ -82,14 +83,14 @@ if ($signed) {
 # --- 4. quick-start readme ----------------------------------------------------
 $installLine = if ($xpiName -and $xpiName -notlike "*UNSIGNED*") {
   @"
-2. Install the extension:
+Install the extension:
      - Open Firefox and drag $xpiName into the window, or
      - about:addons -> gear icon -> 'Install Add-on From File...' -> pick $xpiName
    It is signed by Mozilla, so it stays installed across restarts.
 "@
 } else {
   @"
-2. Install the extension (development mode -- this build is UNSIGNED):
+Install the extension (this build is UNSIGNED, so it is temporary):
      - about:debugging#/runtime/this-firefox -> 'Load Temporary Add-on...'
        -> pick $xpiName in this folder
    Unsigned builds only last until Firefox quits. For a permanent install,
@@ -101,18 +102,22 @@ $readme = @"
 ytgrab -- quick start (Windows)
 ===============================
 
-1. Install the local helper (no admin rights needed):
-     powershell -ExecutionPolicy Bypass -File install.ps1
-   This copies the host into %LOCALAPPDATA%\ytgrab and registers it with
-   Firefox. Missing yt-dlp / ffmpeg? let the installer add them:
-     powershell -ExecutionPolicy Bypass -File install.ps1 -InstallDeps
+1. Run the interactive installer:
 
-$installLine
+     powershell -ExecutionPolicy Bypass -File setup.ps1
+
+   It installs yt-dlp, then ffmpeg, then the local helper, and finally asks
+   which browser to add ytgrab to. Nothing needs administrator rights, every
+   step is a prompt you can decline, and it is safe to run again.
+
+2. $installLine
+
 3. Open any YouTube video and click the blue arrow button at the bottom right.
    The toolbar icon works on any site yt-dlp understands.
 
-Configuration and full docs: see README.md in the project repository.
+By hand instead?  powershell -ExecutionPolicy Bypass -File install.ps1 -InstallDeps
 
+Configuration and full docs: see README.md in the project repository.
 To remove everything:  powershell -ExecutionPolicy Bypass -File uninstall.ps1
 "@
 [System.IO.File]::WriteAllText((Join-Path $stage "READ-ME-FIRST.txt"),

@@ -7,16 +7,23 @@
 # later delete the folder you downloaded), writes the native-messaging manifest,
 # and registers it under HKCU so Firefox can launch it. No admin rights needed.
 #
+# Usually you do not run this by hand: scripts\setup.ps1 is the friendly
+# interactive installer and calls this file. Use this one for scripting/CI.
+#
 # Options:
-#   -InstallDeps        run "winget install" for any missing yt-dlp / ffmpeg
-#   -HostExe <path>     use a specific ytgrab-host.exe
-#   -Python  <path>     python to use for the pythonw fallback (no exe present)
+#   -InstallDeps    run "winget install" for any missing yt-dlp / ffmpeg
+#   -SkipDeps       do not look for yt-dlp / ffmpeg at all
+#   -Quiet          minimal output (used by setup.ps1)
+#   -HostExe <path> use a specific ytgrab-host.exe
+#   -Python  <path> python to use for the pythonw fallback (no exe present)
 
 [CmdletBinding()]
 param(
   [string]$HostExe = "",
   [string]$Python = "",
-  [switch]$InstallDeps
+  [switch]$InstallDeps,
+  [switch]$SkipDeps,
+  [switch]$Quiet
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,10 +32,12 @@ $here       = $PSScriptRoot
 $installDir = Join-Path $env:LOCALAPPDATA "ytgrab"
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 
-Write-Host ""
-Write-Host "ytgrab host installer" -ForegroundColor Cyan
-Write-Host "  installing to $installDir"
-Write-Host ""
+if (-not $Quiet) {
+  Write-Host ""
+  Write-Host "ytgrab host installer" -ForegroundColor Cyan
+  Write-Host "  installing to $installDir"
+  Write-Host ""
+}
 
 # --- 1. locate the host executable ------------------------------------------
 if (-not $HostExe) {
@@ -96,22 +105,24 @@ Set-Item -Path $key -Value $manifestPath
 Write-Host "registry        : $key"
 
 # --- 4. external tools the host shells out to -------------------------------
-Write-Host ""
-$missing = @()
-if (-not (Get-Command yt-dlp -ErrorAction SilentlyContinue)) { $missing += "yt-dlp" }
-if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { $missing += "ffmpeg" }
-if ($missing.Count) {
-  Write-Host "missing tools   : $($missing -join ', ')" -ForegroundColor Yellow
-  Write-Host "  install with  : winget install yt-dlp.yt-dlp Gyan.FFmpeg"
-  if ($InstallDeps) {
-    Write-Host "  installing via winget..." -ForegroundColor Cyan
-    winget install --id yt-dlp.yt-dlp --accept-source-agreements --accept-package-agreements
-    winget install --id Gyan.FFmpeg   --accept-source-agreements --accept-package-agreements
+if (-not $SkipDeps) {
+  Write-Host ""
+  $missing = @()
+  if (-not (Get-Command yt-dlp -ErrorAction SilentlyContinue)) { $missing += "yt-dlp" }
+  if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { $missing += "ffmpeg" }
+  if ($missing.Count) {
+    Write-Host "missing tools   : $($missing -join ', ')" -ForegroundColor Yellow
+    Write-Host "  install with  : winget install yt-dlp.yt-dlp Gyan.FFmpeg"
+    if ($InstallDeps) {
+      Write-Host "  installing via winget..." -ForegroundColor Cyan
+      winget install --id yt-dlp.yt-dlp --accept-source-agreements --accept-package-agreements
+      winget install --id Gyan.FFmpeg   --accept-source-agreements --accept-package-agreements
+    } else {
+      Write-Host "  (re-run with -InstallDeps to install them automatically)"
+    }
   } else {
-    Write-Host "  (re-run with -InstallDeps to install them automatically)"
+    Write-Host "external tools  : yt-dlp + ffmpeg found on PATH" -ForegroundColor Green
   }
-} else {
-  Write-Host "external tools  : yt-dlp + ffmpeg found on PATH" -ForegroundColor Green
 }
 
 # --- 5. sanity check: launch the host exactly like Firefox would -------------
@@ -146,14 +157,19 @@ if ($ok) {
 }
 
 # --- 6. next steps -----------------------------------------------------------
-Write-Host ""
-Write-Host "Next steps" -ForegroundColor Cyan
-Write-Host "  1. Install the extension:"
-Write-Host "       about:addons  -> gear icon -> 'Install Add-on From File...'"
-Write-Host "       (or drag a signed ytgrab .xpi into a Firefox window)"
-Write-Host "     No signed .xpi? Load one temporarily instead:"
-Write-Host "       about:debugging#/runtime/this-firefox -> 'Load Temporary Add-on...'"
-Write-Host "       -> pick ytgrab-<version>.xpi (or extension\manifest.json in a checkout);"
-Write-Host "          temporary add-ons only survive until Firefox quits"
-Write-Host "  2. Open a YouTube video and click the blue arrow button at the bottom right."
-Write-Host ""
+if (-not $Quiet) {
+  Write-Host ""
+  Write-Host "Next steps" -ForegroundColor Cyan
+  Write-Host "  Easiest: run scripts\setup.ps1 -- it walks through everything,"
+  Write-Host "  including installing the extension permanently."
+  Write-Host ""
+  Write-Host "  Or by hand:"
+  Write-Host "    1. Install the extension:"
+  Write-Host "         about:addons  -> gear icon -> 'Install Add-on From File...'"
+  Write-Host "         (or drag a signed ytgrab .xpi into a Firefox window)"
+  Write-Host "       No signed .xpi? Load it temporarily instead:"
+  Write-Host "         about:debugging#/runtime/this-firefox -> 'Load Temporary Add-on...'"
+  Write-Host "         -> pick ytgrab-<version>.xpi (or extension\manifest.json in a checkout)"
+  Write-Host "    2. Open a YouTube video and click the blue arrow button."
+  Write-Host ""
+}
