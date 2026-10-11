@@ -346,7 +346,9 @@
           setStatus(msg.message, "bad");
         } else {
           setStatus(
-            "Lost the ytgrab host. Run scripts/install.ps1 and reload the extension.",
+            msg.message ||
+              "Lost the ytgrab host. Run scripts/install.ps1, then fully " +
+                "restart Firefox and reload the extension.",
             "bad"
           );
         }
