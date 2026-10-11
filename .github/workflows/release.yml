@@ -1,0 +1,62 @@
+# Builds the Windows host + extension bundle and attaches it to a GitHub Release.
+#
+#   * manual run : Actions -> release -> Run workflow
+#   * tag run    : git tag v0.2.3 && git push origin v0.2.3
+#
+# A single, permanently-installable .xpi requires Mozilla signing. Add these
+# repository secrets to enable it:
+#     AMO_JWT_ISSUER   (looks like user:12345:67)
+#     AMO_JWT_SECRET   (long hex string)
+# Get them at https://addons.mozilla.org/developers/addon/api/key/
+# Without the secrets the workflow still builds a bundle, but the .xpi inside
+# only loads temporarily via about:debugging.
+
+name: release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build host and bundle
+        shell: pwsh
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          if ($env:AMO_JWT_ISSUER -and $env:AMO_JWT_SECRET) {
+            Write-Host "AMO credentials found - building a signed bundle"
+            ./scripts/make_release.ps1 -Sign
+          } else {
+            Write-Host "no AMO credentials - building an unsigned bundle"
+            ./scripts/make_release.ps1
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ytgrab-windows
+          path: release/*.zip
+
+      - name: Attach the bundle to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.zip
+          generate_release_notes: true
