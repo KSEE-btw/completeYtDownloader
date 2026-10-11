@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ytgrab — download & convert for Premiere",
-  "version": "0.2.3",
-  "description": "Pick a format and download any video with yt-dlp, converting to a Premiere-compatible file only when the codecs require it.",
+  "version": "0.3.0",
+  "description": "Pick a format and download any video with yt-dlp, converting to a Premiere-compatible file only when needed. A small desktop window tracks the queue and progress.",
   "browser_specific_settings": {
     "gecko": {
       "id": "ytgrab@kunal.local",

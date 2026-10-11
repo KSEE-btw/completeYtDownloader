@@ -136,17 +136,17 @@
       text: "Download",
       onclick: startDownload,
     });
-    const cancelBtn = el("button", {
-      class: "ghost",
-      text: "Cancel",
-      hidden: true,
-      onclick: cancel,
-    });
     const openBtn = el("button", {
       class: "ghost",
       text: "Show file",
       hidden: true,
       onclick: showFile,
+    });
+    const queueBtn = el("button", {
+      class: "ghost",
+      text: "Open queue window",
+      title: "Track progress and cancel downloads in the ytgrab window",
+      onclick: openQueue,
     });
 
     const bar = el("i");
@@ -185,7 +185,7 @@
       ]),
       el("div", { class: "row2" }, [targetField, outdirField]),
       hintEl,
-      el("div", { class: "actions" }, [dlBtn, cancelBtn, openBtn]),
+      el("div", { class: "actions" }, [dlBtn, openBtn, queueBtn]),
       progress,
       statusEl,
       logEl,
@@ -220,7 +220,6 @@
       state.running = busy;
       dlBtn.disabled = busy;
       dlBtn.textContent = busy ? "Working\u2026" : "Download";
-      cancelBtn.hidden = !busy;
       formatSel.disabled = busy;
       convertBox.disabled = busy;
       targetSel.disabled = busy || !convertBox.checked;
@@ -404,6 +403,24 @@
 
     function handleJobMessage(msg) {
       switch (msg.type) {
+        case "queued": {
+          setBusy(false);
+          progress.hidden = true;
+          bar.style.width = "0%";
+          pinfoLeft.textContent = "";
+          pinfoRight.textContent = "";
+          state.jobId = null;
+          statusEl.replaceChildren();
+          const span = document.createElement("span");
+          span.className = "ok";
+          span.textContent =
+            "Added to the queue \u2014 it keeps downloading while this " +
+            "closes. Track it in the ytgrab window.";
+          statusEl.appendChild(span);
+          statusEl.className = "status ok";
+          openBtn.hidden = true;
+          break;
+        }
         case "stage":
           pinfoLeft.textContent = msg.stage_label || msg.stage;
           break;
@@ -556,17 +573,18 @@
       }
       const sel = resolvedSelection();
       state.jobId = nextId("dl");
-      progress.hidden = false;
-      bar.style.width = "0%";
-      pinfoLeft.textContent = "Starting\u2026";
-      pinfoRight.textContent = "";
+      // The Windows queue window owns the download from here on, so the panel
+      // only confirms the hand-off -- no inline progress bar to lose when the
+      // popup closes.
+      progress.hidden = true;
       openBtn.hidden = true;
-      setStatus("", "");
+      setStatus("Adding to the queue\u2026", "");
       setBusy(true);
       send({
         cmd: "download",
         id: state.jobId,
         url,
+        title: titleEl.textContent || "",
         format: sel.format,
         mode: sel.mode,
         convert: convertBox.checked,
@@ -576,11 +594,8 @@
       });
     }
 
-    function cancel() {
-      if (state.jobId) {
-        send({ cmd: "cancel", id: nextId("cancel"), job: state.jobId });
-        setStatus("Cancelling\u2026", "");
-      }
+    function openQueue() {
+      send({ cmd: "open_ui", id: nextId("ui") });
     }
 
     function showFile() {

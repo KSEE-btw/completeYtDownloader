@@ -1,8 +1,10 @@
-# ytgrab -- build a standalone host executable with PyInstaller
+# ytgrab -- build a standalone executable with PyInstaller
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\build_host.ps1
 #
-# Produces host\dist\ytgrab-host.exe and re-runs install.ps1 so Firefox
+# Produces host\dist\ytgrab-host.exe.  One binary serves both roles: run with
+# no arguments it is the native-messaging host Firefox talks to; run with --ui
+# it is the download queue window.  The script re-runs install.ps1 so Firefox
 # launches the exe instead of the pythonw launcher.
 
 [CmdletBinding()]
@@ -35,6 +37,9 @@ $args = @(
   $mode,
   "--noconsole",
   "--name", "ytgrab-host",
+  "--hidden-import", "tkinter",
+  "--hidden-import", "tkinter.ttk",
+  "--hidden-import", "tkinter.messagebox",
   "--distpath", (Join-Path $hostDir "dist"),
   "--workpath", (Join-Path $hostDir "build"),
   "--specpath", $spec,
