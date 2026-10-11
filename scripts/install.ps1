@@ -35,6 +35,42 @@ $installDir = Join-Path $env:LOCALAPPDATA "ytgrab"
 $lib = Join-Path $here "lib\firefox.ps1"
 if (Test-Path $lib) { . $lib }
 
+# The version of the build being installed: a release bundle carries version.txt,
+# a checkout has it in the extension manifest.
+function Get-YtgrabVersion {
+  foreach ($c in @((Join-Path $here "version.txt"),
+                   (Join-Path $here "extension\manifest.json"),
+                   (Join-Path $here "..\extension\manifest.json"))) {
+    if (Test-Path $c) {
+      if ($c -like "*.txt") {
+        $v = (Get-Content $c -Raw).Trim()
+        if ($v) { return $v }
+      } else {
+        $v = (Get-Content $c -Raw | ConvertFrom-Json).version
+        if ($v) { return $v }
+      }
+    }
+  }
+  return ""
+}
+
+# Put the install folder on the *user* PATH so "ytgrab update" works anywhere.
+# Reports $true only when it actually changed something.
+function Add-YtgrabToUserPath {
+  param([string]$Dir)
+  try {
+    $current = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($null -eq $current) { $current = "" }
+    $parts = @($current.Split(";") | Where-Object { $_ -ne "" })
+    if ($parts -contains $Dir) { return $false }
+    [Environment]::SetEnvironmentVariable("Path", (@($parts) + $Dir -join ";"), "User")
+    return $true
+  } catch {
+    Write-Warning "could not update your user PATH: $_"
+    return $false
+  }
+}
+
 # How to describe getting a permanently-installable build: package.ps1 exists in
 # a checkout but not in a release bundle, which only carries the signed .xpi.
 $signHint = if (Test-Path (Join-Path $here "package.ps1")) {
@@ -104,6 +140,38 @@ if ($HostExe -and (Test-Path $HostExe)) {
   $targetExe = Join-Path $installDir "ytgrab-launcher.bat"
   Write-Host "host launcher   : $targetExe  (pythonw)" -ForegroundColor Yellow
   Write-Host "  tip: build ytgrab-host.exe to avoid needing Python" -ForegroundColor DarkGray
+}
+
+# --- 1b. the console CLI (ytgrab update / notes) ----------------------------
+# Optional: a checkout without a built exe simply has no CLI to install.
+$cliExe = $null
+foreach ($c in @((Join-Path $here "ytgrab.exe"),
+                 (Join-Path $here "host\dist\ytgrab.exe"),
+                 (Join-Path $here "dist\ytgrab.exe"),
+                 (Join-Path (Split-Path -Parent $here) "host\dist\ytgrab.exe"))) {
+  if (Test-Path $c) { $cliExe = $c; break }
+}
+if ($cliExe) {
+  $targetCli = Join-Path $installDir "ytgrab.exe"
+  Copy-Item -Path $cliExe -Destination $targetCli -Force
+  Write-Host "command line    : $targetCli" -ForegroundColor Green
+}
+
+$version = Get-YtgrabVersion
+if ($version) {
+  [System.IO.File]::WriteAllText((Join-Path $installDir "version.txt"),
+    "$version`n", (New-Object System.Text.UTF8Encoding($false)))
+  Write-Host "version         : $version"
+}
+
+if ($cliExe) {
+  if (Add-YtgrabToUserPath $installDir) {
+    Write-Host "PATH            : added $installDir to your user PATH" -ForegroundColor Green
+    Write-Host "                  open a new terminal, then run:  ytgrab update"
+  } else {
+    Write-Host "PATH            : $installDir is already on your user PATH"
+  }
+  $env:Path = "$env:Path;$installDir"   # so this session sees it too
 }
 
 # --- 2. write the native messaging manifest ---------------------------------
@@ -206,6 +274,11 @@ if (-not $Quiet) {
     Write-Host "                  (works instantly; goes away when Firefox quits)"
   }
   Write-Host ""
+  if ($cliExe) {
+    Write-Host "  From any new terminal:  ytgrab update   (check for updates)"
+    Write-Host "                          ytgrab ui       (open the download queue)"
+    Write-Host ""
+  }
   Write-Host "Then open any YouTube video and click the blue arrow button."
   Write-Host ""
 }

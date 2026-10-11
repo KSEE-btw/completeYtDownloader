@@ -9,7 +9,10 @@
 #     AMO_JWT_SECRET   (long hex string)
 # Get them at https://addons.mozilla.org/developers/addon/api/key/
 # Without the secrets the workflow still builds a bundle, but the .xpi inside
-# only loads temporarily via about:debugging.
+# only loads temporarily via about:debugging, and Firefox auto-update is off.
+#
+# The release body comes from docs/releases/v<version>.md -- the same document
+# the bundle ships as RELEASE-NOTES.md and `ytgrab update` prints.
 
 name: release
 
@@ -24,6 +27,8 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,6 +39,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      - name: Read the version
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Get-Content extension/manifest.json -Raw | ConvertFrom-Json).version
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "version = $v"
 
       - name: Build host and bundle
         shell: pwsh
@@ -52,11 +65,41 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ytgrab-windows
-          path: release/*.zip
+          path: |
+            release/*.zip
+            release/SHA256SUMS.txt
+            release/*.xpi
+            release/updates.json
 
       - name: Attach the bundle to the release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*.zip
-          generate_release_notes: true
+          body_path: docs/releases/v${{ steps.version.outputs.version }}.md
+          files: |
+            release/*.zip
+            release/SHA256SUMS.txt
+            release/ytgrab-*.xpi
+            release/updates.json
+
+      - name: Refresh the Firefox update manifest on main
+        if: startsWith(github.ref, 'refs/tags/')
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          if (-not (Test-Path release/updates.json)) {
+            Write-Host "no release/updates.json (unsigned build) - skipping"
+            exit 0
+          }
+          git fetch origin main
+          git checkout -B main origin/main
+          Copy-Item release/updates.json docs/updates.json -Force
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/updates.json
+          if (git diff --cached --quiet) {
+            Write-Host "docs/updates.json already current"
+            exit 0
+          }
+          git commit -m "chore: update manifest for v${{ steps.version.outputs.version }}"
+          git push origin main

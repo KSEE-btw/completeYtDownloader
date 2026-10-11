@@ -1,0 +1,12 @@
+{
+  "addons": {
+    "ytgrab@kunal.local": {
+      "updates": [
+        {
+          "version": "0.3.0",
+          "update_link": "https://github.com/KSEE-btw/youtubeDownloaderXConverter/releases/download/v0.3.0/ytgrab-0.3.0.xpi"
+        }
+      ]
+    }
+  }
+}

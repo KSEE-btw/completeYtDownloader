@@ -6,10 +6,13 @@
 # Produces:
 #   release\ytgrab-<version>\               (the files, ready to inspect)
 #   release\ytgrab-<version>-windows.zip    (hand this to anyone)
+#   release\ytgrab-<version>.xpi            (the signed add-on, if -Sign worked)
+#   release\SHA256SUMS.txt                  (checksum for "ytgrab update")
+#   release\updates.json                    (Firefox auto-update manifest)
 #
-# The bundle contains everything a new user needs: the standalone host exe, an
-# installer that needs no admin rights, and (with -Sign) a signed .xpi that
-# installs permanently.
+# The bundle contains everything a new user needs: the windowless host, the
+# console CLI, an installer that needs no admin rights, the release notes, and
+# (with -Sign) a signed .xpi that installs permanently.
 
 [CmdletBinding()]
 param(
@@ -19,7 +22,8 @@ param(
   [string]$ApiKey    = $env:AMO_JWT_ISSUER,
   [string]$ApiSecret = $env:AMO_JWT_SECRET,
   [string]$Python    = "",
-  [string]$WebExt    = "8"
+  [string]$WebExt    = "8",
+  [string]$Repo      = "KSEE-btw/youtubeDownloaderXConverter"
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,12 +32,12 @@ $root = Split-Path -Parent $PSScriptRoot
 Write-Host ""
 Write-Host "=== ytgrab release build ===" -ForegroundColor Cyan
 
-# --- 1. standalone host exe --------------------------------------------------
+# --- 1. standalone executables -----------------------------------------------
 if ($SkipHostBuild) {
   Write-Host "skipping host build (-SkipHostBuild)"
 } else {
   Write-Host ""
-  Write-Host "--- building host ---" -ForegroundColor Cyan
+  Write-Host "--- building host + cli ---" -ForegroundColor Cyan
   & (Join-Path $PSScriptRoot "build_host.ps1") -Python $Python -NoInstall
 }
 
@@ -55,17 +59,34 @@ $stage = Join-Path $root "release\ytgrab-$version"
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
-$exe = Join-Path $root "host\dist\ytgrab-host.exe"
-if (-not (Test-Path $exe)) { throw "host exe not found at $exe (build it first)" }
-
-Copy-Item $exe                                    (Join-Path $stage "ytgrab-host.exe")  -Force
-Copy-Item (Join-Path $root "host\ytgrab_host.py") (Join-Path $stage "ytgrab_host.py")   -Force
-Copy-Item (Join-Path $PSScriptRoot "setup.ps1")     (Join-Path $stage "setup.ps1")     -Force
-Copy-Item (Join-Path $PSScriptRoot "install.ps1") (Join-Path $stage "install.ps1")     -Force
-Copy-Item (Join-Path $PSScriptRoot "uninstall.ps1") (Join-Path $stage "uninstall.ps1") -Force
+foreach ($pair in @(
+    @("host\dist\ytgrab-host.exe", "ytgrab-host.exe"),
+    @("host\dist\ytgrab.exe",      "ytgrab.exe"),
+    @("host\ytgrab_host.py",       "ytgrab_host.py"),
+    @("host\ytgrab_cli.py",        "ytgrab_cli.py"),
+    @("scripts\setup.ps1",         "setup.ps1"),
+    @("scripts\install.ps1",       "install.ps1"),
+    @("scripts\uninstall.ps1",     "uninstall.ps1"))) {
+  $from = Join-Path $root $pair[0]
+  if (-not (Test-Path $from)) { throw "missing $from (build it first)" }
+  Copy-Item $from (Join-Path $stage $pair[1]) -Force
+}
 New-Item -ItemType Directory -Force -Path (Join-Path $stage "lib") | Out-Null
 Copy-Item (Join-Path $PSScriptRoot "lib\firefox.ps1") (Join-Path $stage "lib\firefox.ps1") -Force
 
+# the single source of truth for "what is installed"
+[System.IO.File]::WriteAllText((Join-Path $stage "version.txt"),
+  "$version`n", (New-Object System.Text.UTF8Encoding($false)))
+
+# release notes: docs\releases\v<version>.md, shipped and used as the release body
+$notesFrom = Join-Path $root "docs\releases\v$version.md"
+if (Test-Path $notesFrom) {
+  Copy-Item $notesFrom (Join-Path $stage "RELEASE-NOTES.md") -Force
+} else {
+  Write-Host "warning: no docs\releases\v$version.md; the bundle has no notes" -ForegroundColor Yellow
+}
+
+# --- 4. the signed (or unsigned) extension -----------------------------------
 $xpiName = $null
 $signed = Get-ChildItem (Join-Path $root "web-ext-artifacts\*.xpi") -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -notlike "*-unsigned.xpi" } |
@@ -73,6 +94,7 @@ $signed = Get-ChildItem (Join-Path $root "web-ext-artifacts\*.xpi") -ErrorAction
 if ($signed) {
   $xpiName = "ytgrab-$version.xpi"
   Copy-Item $signed.FullName (Join-Path $stage $xpiName) -Force
+  Copy-Item $signed.FullName (Join-Path $root "release\$xpiName") -Force
 } else {
   $unsigned = Get-ChildItem (Join-Path $root "web-ext-artifacts\*-unsigned.xpi") -ErrorAction SilentlyContinue |
                 Sort-Object LastWriteTime | Select-Object -Last 1
@@ -82,7 +104,7 @@ if ($signed) {
   }
 }
 
-# --- 4. quick-start readme ----------------------------------------------------
+# --- 5. quick-start readme ----------------------------------------------------
 $installLine = if ($xpiName -and $xpiName -notlike "*UNSIGNED*") {
   @"
 Install the extension:
@@ -116,7 +138,15 @@ ytgrab -- quick start (Windows)
 2. $installLine
 
 3. Open any YouTube video and click the blue arrow button at the bottom right.
-   The toolbar icon works on any site yt-dlp understands.
+   The toolbar icon works on any site yt-dlp understands. Downloads run in a
+   small queue window, so closing the browser popup does not stop them.
+
+Keeping up to date -- from any new terminal:
+
+     ytgrab update     download and install the newest version, then show
+                       what changed
+     ytgrab notes      show the notes for the installed version
+     ytgrab ui         open (or focus) the download queue window
 
 By hand instead?  powershell -ExecutionPolicy Bypass -File install.ps1 -InstallDeps
 
@@ -127,11 +157,44 @@ To remove everything:  powershell -ExecutionPolicy Bypass -File uninstall.ps1 -P
 [System.IO.File]::WriteAllText((Join-Path $stage "READ-ME-FIRST.txt"),
   $readme, (New-Object System.Text.UTF8Encoding($false)))
 
-# --- 5. zip -------------------------------------------------------------------
+# --- 6. zip + checksum -------------------------------------------------------
 $zip = Join-Path $root "release\ytgrab-$version-windows.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path $stage -DestinationPath $zip -Force
 
+$hash = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLower()
+[System.IO.File]::WriteAllText((Join-Path $root "release\SHA256SUMS.txt"),
+  "$hash  $(Split-Path -Leaf $zip)`n", (New-Object System.Text.UTF8Encoding($false)))
+
+# --- 7. Firefox auto-update manifest -----------------------------------------
+# Only a signed build can be auto-updated. update_url in the extension manifest
+# points at this file on main, so "ytgrab update" is not the only path: Firefox
+# also picks up new versions on its own.
+if ($signed -and $xpiName -and $xpiName -notlike "*UNSIGNED*") {
+  $link = "https://github.com/$Repo/releases/download/v$version/$xpiName"
+  $updatesJson = @"
+{
+  "addons": {
+    "ytgrab@kunal.local": {
+      "updates": [
+        {
+          "version": "$version",
+          "update_link": "$link"
+        }
+      ]
+    }
+  }
+}
+"@
+  [System.IO.File]::WriteAllText((Join-Path $root "release\updates.json"),
+    $updatesJson, (New-Object System.Text.UTF8Encoding($false)))
+  New-Item -ItemType Directory -Force -Path (Join-Path $root "docs") | Out-Null
+  [System.IO.File]::WriteAllText((Join-Path $root "docs\updates.json"),
+    $updatesJson, (New-Object System.Text.UTF8Encoding($false)))
+  Write-Host "updated docs\updates.json for Firefox auto-update" -ForegroundColor Green
+}
+
+# --- done --------------------------------------------------------------------
 Write-Host ""
 Write-Host "=== done ===" -ForegroundColor Green
 Write-Host "folder : $stage"

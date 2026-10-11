@@ -98,7 +98,8 @@ The sections below are those same steps by hand.
 
 ```powershell
 cd ytgrab
-# builds host\dist\ytgrab-host.exe, installs it and registers it with Firefox
+# builds host\dist\ytgrab-host.exe (host + queue window) and host\dist\ytgrab.exe
+# (the console CLI), installs both and registers the host with Firefox
 powershell -ExecutionPolicy Bypass -File scripts\build_host.ps1
 ```
 
@@ -155,6 +156,40 @@ started survives closing the popup, and even closing Firefox.
 The queue lives in `~/.config/ytgrab/queue.json`. Deleting it just forgets the
 history — no downloads are harmed.
 
+## Keeping up to date
+
+The installer puts a small command-line tool on your PATH, next to the helper:
+
+```powershell
+ytgrab update        # check, download, verify, install, then show what changed
+ytgrab update --check   # just report whether a newer version exists
+ytgrab notes         # (re)print the notes for the version you have
+ytgrab version       # print the installed versions and folders
+ytgrab ui            # open (or focus) the download queue window
+```
+
+`ytgrab update` reads the newest [GitHub release][releases], compares it with
+the version recorded in `%LOCALAPPDATA%\ytgrab\version.txt`, asks before it
+changes anything (add `--yes` to skip the prompt), downloads the bundle,
+**checks its SHA-256** against the published `SHA256SUMS.txt`, and only then
+swaps the executables. If the queue window is running it is stopped first, and
+anything unfinished resumes afterwards. The backup of the exe that replaced
+itself is cleaned up on the next run.
+
+The extension updates the way any Firefox add-on does: the signed build declares
+a `gecko.update_url` pointing at [`docs/updates.json`](docs/updates.json), and
+the release workflow refreshes that file from each new signed release. So
+`ytgrab update` is only ever needed for the local helper; the add-on looks after
+itself.
+
+One document feeds all of it: `docs/releases/vX.Y.Z.md` is added in the pull
+request that makes the change, becomes the body of the GitHub release, ships
+inside the bundle as `RELEASE-NOTES.md`, and is what `ytgrab update` prints.
+A CI check ([`scripts/check_versions.py`](scripts/check_versions.py)) keeps the
+manifest version, the core version and that file in step.
+
+[releases]: https://github.com/KSEE-btw/youtubeDownloaderXConverter/releases
+
 ## Configuration
 
 `~/.config/ytgrab/config.json` (created on first write; see
@@ -210,9 +245,11 @@ python host\ytgrab_ui.py --ui                      # open the queue window direc
 python host\ytgrab_ui.py --headless                # run the queue with no window
 python host\ytgrab_ui.py --smoke                   # build + destroy the window (CI)
 python host\ytgrab_ui.py --self-test-url "URL"     # end-to-end: queue -> download
+python host\ytgrab_cli.py --help                   # the console CLI
+python scripts\check_versions.py                   # version parity + notes check
 ```
 
-The code is split into three modules under `host\`:
+The code is split into modules under `host\`:
 
 | file | role |
 | --- | --- |
@@ -220,6 +257,7 @@ The code is split into three modules under `host\`:
 | `ytgrab_ipc.py` | loopback JSON IPC + the `runtime.json` handshake |
 | `ytgrab_host.py` | the native-messaging bridge (and `--ui` dispatch) |
 | `ytgrab_ui.py` | the queue window, queue model and persistence |
+| `ytgrab_cli.py` | the console CLI: self-update, release notes, `ui` |
 
 `scripts\test_host.py` speaks the real native-messaging framing, so it exercises
 exactly what Firefox does without opening a browser. A `download` now returns a
@@ -251,7 +289,10 @@ uploads it for **unlisted** (self-distribution) signing. It writes a signed
   pick the `.xpi`, **or**
 - drag the `.xpi` straight into a Firefox window and confirm.
 
-From then on it loads automatically at every start, like any other add-on.
+From then on it loads automatically at every start, like any other add-on. The
+signed build is self-distributed, so it declares its own `gecko.update_url`
+pointing at `docs/updates.json` — the release workflow keeps that file current,
+so the add-on updates itself without any manual reinstall.
 
 > AMO refuses to sign a version number it has already seen, so pass `-BumpPatch`
 > (`scripts\package.ps1 -Sign -BumpPatch`) when re-releasing.
@@ -274,10 +315,12 @@ One command produces a self-contained bundle:
 powershell -ExecutionPolicy Bypass -File scripts\make_release.ps1 -Sign
 ```
 
-That writes `release\ytgrab-<version>-windows.zip` containing the standalone
-host exe, `install.ps1` / `uninstall.ps1`, the signed `.xpi`, and a
-`READ-ME-FIRST.txt`. Hand the zip to anyone (attach it to a GitHub Release);
-their steps are:
+That writes `release\ytgrab-<version>-windows.zip` containing both executables
+(`ytgrab-host.exe` for the helper and queue window, `ytgrab.exe` for the CLI),
+`install.ps1` / `uninstall.ps1`, the signed `.xpi`, `RELEASE-NOTES.md` and a
+`READ-ME-FIRST.txt` — plus `release\SHA256SUMS.txt` and `release\updates.json`
+beside the zip, which the updater and Firefox respectively consume. Hand the zip
+to anyone (attach it to a GitHub Release); their steps are:
 
 1. unzip it
 2. `powershell -ExecutionPolicy Bypass -File setup.ps1`
@@ -286,8 +329,10 @@ their steps are:
 3. click the blue arrow on any YouTube video
 
 The repo also ships `.github/workflows/release.yml`, which runs exactly this on a
-`v*` tag and attaches the zip to a GitHub Release. Add `AMO_JWT_ISSUER` and
-`AMO_JWT_SECRET` as repository secrets and the CI build is signed too.
+`v*` tag, uses `docs/releases/v<version>.md` as the release body, attaches the
+zip, the checksums and the signed `.xpi`, and refreshes `docs/updates.json` on
+`main` for Firefox auto-update. Add `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` as
+repository secrets and the CI build is signed too.
 
 Two things are worth knowing when you hand this out:
 

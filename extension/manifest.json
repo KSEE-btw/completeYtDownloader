@@ -7,6 +7,7 @@
     "gecko": {
       "id": "ytgrab@kunal.local",
       "strict_min_version": "115.0",
+      "update_url": "https://raw.githubusercontent.com/KSEE-btw/youtubeDownloaderXConverter/main/docs/updates.json",
       "data_collection_permissions": {
         "required": ["none"]
       }
