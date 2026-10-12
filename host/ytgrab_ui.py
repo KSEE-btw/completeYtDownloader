@@ -45,16 +45,37 @@ except Exception:            # pragma: no cover - no display / no Tk
     tk = ttk = messagebox = None
     TK_OK = False
 
-# dark palette that roughly matches the extension
-BG = "#16181d"
-CARD = "#1e2127"
-CARD_HI = "#242832"
-FG = "#e8eaed"
-MUTED = "#9aa0a6"
-ACCENT = "#4c8dff"
-OK = "#3fb950"
-WARN = "#d29922"
-BAD = "#f85149"
+# Breeze -- KDE Plasma's default look: soft light-grey surfaces, a white view,
+# flat 1px hairlines and the signature #3daee9 accent blue.
+BG = "#eff0f1"          # window background
+CARD = "#ffffff"        # list card / view background
+CARD_HI = "#f7f8f9"     # hover tint
+HEADER = "#fcfcfc"      # toolbar strip
+BORDER = "#c9ced3"      # hairline borders
+FG = "#232629"          # primary text
+MUTED = "#6f7a80"       # secondary text
+ACCENT = "#3daee9"      # Breeze highlight blue
+ACCENT_DK = "#2980b9"
+OK = "#27ae60"
+WARN = "#f67400"
+BAD = "#da4453"
+TROUGH = "#e3e5e6"
+# left stripe colour on each card, keyed by status
+STRIPE = {"queued": "#9aa0a6", "running": ACCENT, "done": OK,
+          "error": BAD, "cancelled": "#b8bec3"}
+
+
+def pick_ui_font(root) -> str:
+    """Prefer a KDE-ish sans if it is installed, else a clean Windows one."""
+    try:
+        families = set(root.tk.call("font", "families"))
+    except Exception:
+        return "Segoe UI"
+    for name in ("Noto Sans", "Cantarell", "Segoe UI", "DejaVu Sans",
+                 "Helvetica", "Arial"):
+        if name in families:
+            return name
+    return "TkDefaultFont"
 
 
 # --------------------------------------------------------------------------- #
@@ -478,10 +499,11 @@ if TK_OK:
             self._closing = False
 
             self.title("ytgrab \u2014 download queue")
-            self.geometry("780x540")
-            self.minsize(600, 360)
+            self.geometry("820x560")
+            self.minsize(620, 380)
             self.configure(bg=BG)
             self._init_style()
+            self.font = pick_ui_font(self)
 
             self._build()
             self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -498,25 +520,47 @@ if TK_OK:
                 style.theme_use("clam")
             except tk.TclError:
                 pass
-            style.configure("Yt.TButton", background=CARD_HI, foreground=FG,
-                            borderwidth=0, focusthickness=0, padding=(10, 4))
+            # flat Breeze buttons: light fill, hairline border, blue on press
+            style.configure("Yt.TButton", background=CARD, foreground=FG,
+                            borderwidth=1, relief="solid", focusthickness=0,
+                            padding=(12, 5), bordercolor=BORDER,
+                            lightcolor=CARD, darkcolor=CARD)
             style.map("Yt.TButton",
-                      background=[("active", "#333a48"), ("pressed", ACCENT),
-                                  ("disabled", CARD)],
-                      foreground=[("disabled", MUTED)])
-            style.configure("Yt.Horizontal.TProgressbar", troughcolor="#2a2f3a",
-                            background=ACCENT, bordercolor="#2a2f3a",
+                      background=[("pressed", ACCENT), ("active", CARD_HI),
+                                  ("disabled", BG)],
+                      foreground=[("pressed", "#ffffff"), ("disabled", MUTED)],
+                      bordercolor=[("active", ACCENT), ("pressed", ACCENT_DK),
+                                   ("disabled", BORDER)],
+                      lightcolor=[("active", CARD_HI), ("pressed", ACCENT)],
+                      darkcolor=[("active", CARD_HI), ("pressed", ACCENT_DK)])
+            style.configure("Yt.Horizontal.TProgressbar", troughcolor=TROUGH,
+                            background=ACCENT, bordercolor=TROUGH,
                             lightcolor=ACCENT, darkcolor=ACCENT, thickness=8)
+            style.configure("Yt.Ok.Horizontal.TProgressbar", troughcolor=TROUGH,
+                            background=OK, bordercolor=TROUGH,
+                            lightcolor=OK, darkcolor=OK, thickness=8)
+            style.configure("Yt.Bad.Horizontal.TProgressbar", troughcolor=TROUGH,
+                            background=BAD, bordercolor=TROUGH,
+                            lightcolor=BAD, darkcolor=BAD, thickness=8)
+            style.configure("Yt.Vertical.TScrollbar", background=BORDER,
+                            troughcolor=BG, bordercolor=BG, arrowcolor=MUTED,
+                            lightcolor=BG, darkcolor=BG, gripcount=0)
+            style.map("Yt.Vertical.TScrollbar",
+                      background=[("active", "#9ea7ab"), ("pressed", ACCENT)])
 
         # --- layout ---
 
         def _build(self) -> None:
-            header = tk.Frame(self, bg=CARD, padx=14, pady=10)
+            # --- top toolbar (Breeze-style) ---
+            header = tk.Frame(self, bg=HEADER, padx=14, pady=9)
             header.pack(fill="x")
-            tk.Label(header, text="ytgrab queue", bg=CARD, fg=ACCENT,
-                     font=("Segoe UI", 12, "bold")).pack(side="left")
-            self.summary = tk.Label(header, text="", bg=CARD, fg=MUTED,
-                                    font=("Segoe UI", 9))
+            tk.Label(header, text="\u25b6", bg=HEADER, fg=ACCENT,
+                     font=(self.font, 12, "bold")).pack(side="left",
+                                                        padx=(0, 8))
+            tk.Label(header, text="ytgrab queue", bg=HEADER, fg=FG,
+                     font=(self.font, 12, "bold")).pack(side="left")
+            self.summary = tk.Label(header, text="", bg=HEADER, fg=MUTED,
+                                    font=(self.font, 9))
             self.summary.pack(side="left", padx=(12, 0))
 
             for label, cmd in (("Quit", self._quit), ("Hide", self._on_close),
@@ -524,26 +568,30 @@ if TK_OK:
                                ("Open folder", self._open_folder)):
                 ttk.Button(header, text=label, style="Yt.TButton",
                            command=cmd).pack(side="right", padx=(6, 0))
+            tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
 
-            save = tk.Frame(self, bg=BG, padx=14, pady=6)
+            # --- where downloads go ---
+            save = tk.Frame(self, bg=BG, padx=14, pady=7)
             save.pack(fill="x")
             tk.Label(save, text="Save to", bg=BG, fg=MUTED,
-                     font=("Segoe UI", 9)).pack(side="left")
+                     font=(self.font, 9)).pack(side="left")
             self.savedir = tk.Label(save, text="", bg=BG, fg=FG, anchor="w",
-                                    font=("Segoe UI", 9))
-            self.savedir.pack(side="left", fill="x", expand=True, padx=(8, 8))
+                                    font=(self.font, 9))
+            self.savedir.pack(side="left", fill="x", expand=True, padx=(10, 10))
             ttk.Button(save, text="Change\u2026", style="Yt.TButton",
                        command=self._choose_folder).pack(side="right")
             self._refresh_savedir()
 
-            self.canvas = tk.Canvas(self, bg=BG, highlightthickness=0)
+            # --- scrolling list of white cards ---
+            self.canvas = tk.Canvas(self, bg=BG, highlightthickness=0, bd=0)
             scroll = ttk.Scrollbar(self, orient="vertical",
+                                   style="Yt.Vertical.TScrollbar",
                                    command=self.canvas.yview)
             self.canvas.configure(yscrollcommand=scroll.set)
             scroll.pack(side="right", fill="y")
             self.canvas.pack(side="left", fill="both", expand=True)
 
-            self.list = tk.Frame(self.canvas, bg=BG)
+            self.list = tk.Frame(self.canvas, bg=BG, pady=6)
             self.canvas.create_window((0, 0), window=self.list, anchor="nw",
                                       tags="inner")
             self.list.bind(
@@ -557,16 +605,18 @@ if TK_OK:
 
             self.empty = tk.Label(
                 self.list, bg=BG, fg=MUTED, justify="center",
-                font=("Segoe UI", 10),
+                font=(self.font, 10),
                 text=("No downloads yet.\n\n"
                       "Click the blue ytgrab arrow on a page to add one."))
 
+            # --- footer ---
             self.footer = tk.Label(
-                self, bg=BG, fg=MUTED, anchor="w", padx=14, pady=6,
-                font=("Segoe UI", 8),
+                self, bg=HEADER, fg=MUTED, anchor="w", padx=14, pady=6,
+                font=(self.font, 8),
                 text="Closing this window keeps downloads running in the "
                      "background. Use Quit to stop ytgrab.")
             self.footer.pack(fill="x", side="bottom")
+            tk.Frame(self, bg=BORDER, height=1).pack(fill="x", side="bottom")
 
         def _on_wheel(self, event) -> None:
             try:
@@ -582,22 +632,31 @@ if TK_OK:
         # --- row widgets ---
 
         def _create_row(self, item: dict) -> dict:
-            frame = tk.Frame(self.list, bg=CARD, padx=12, pady=9)
-            top = tk.Frame(frame, bg=CARD)
+            # a white Breeze card: hairline border, coloured status stripe
+            frame = tk.Frame(self.list, bg=CARD,
+                             highlightbackground=BORDER, highlightthickness=1)
+            stripe = tk.Frame(frame, width=4,
+                              bg=STRIPE.get(item["status"], MUTED))
+            stripe.pack(side="left", fill="y")
+            body = tk.Frame(frame, bg=CARD, padx=13, pady=9)
+            body.pack(side="left", fill="both", expand=True)
+            top = tk.Frame(body, bg=CARD)
             top.pack(fill="x")
             title = tk.Label(top, bg=CARD, fg=FG, anchor="w",
-                             font=("Segoe UI", 10, "bold"))
+                             font=(self.font, 10, "bold"))
             title.pack(side="left", fill="x", expand=True)
             btns = tk.Frame(top, bg=CARD)
             btns.pack(side="right")
-            detail = tk.Label(frame, bg=CARD, fg=MUTED, anchor="w",
-                              font=("Segoe UI", 9))
-            detail.pack(fill="x", pady=(3, 6))
-            bar = ttk.Progressbar(frame, style="Yt.Horizontal.TProgressbar",
+            detail = tk.Label(body, bg=CARD, fg=MUTED, anchor="w",
+                              font=(self.font, 9))
+            detail.pack(fill="x", pady=(3, 7))
+            bar = ttk.Progressbar(body, style="Yt.Horizontal.TProgressbar",
                                   maximum=100.0)
             bar.pack(fill="x")
-            return {"frame": frame, "title": title, "detail": detail,
-                    "bar": bar, "btns": btns, "buttons": {}, "bar_mode": None}
+            return {"frame": frame, "stripe": stripe, "body": body,
+                    "title": title, "detail": detail,
+                    "bar": bar, "btns": btns, "buttons": {}, "bar_mode": None,
+                    "stripe_mode": item["status"], "border_mode": BORDER}
 
         def _set_buttons(self, row: dict, item: dict) -> None:
             status = item["status"]
@@ -634,12 +693,22 @@ if TK_OK:
             self._tick(force=True)
 
         def _update_row(self, row: dict, item: dict) -> None:
+            status = item["status"]
+            # left stripe carries the status colour; the border lights up blue
+            # while the item is actually running
+            if row["stripe_mode"] != status:
+                row["stripe"].configure(bg=STRIPE.get(status, MUTED))
+                row["stripe_mode"] = status
+            border = ACCENT if status == "running" else BORDER
+            if row["border_mode"] != border:
+                row["frame"].configure(highlightbackground=border)
+                row["border_mode"] = border
             text = item["title"] or item["url"]
             if len(text) > 110:
                 text = text[:107] + "..."
             row["title"].configure(text=text)
             row["detail"].configure(text=detail_text(item))
-            running = item["status"] == "running"
+            running = status == "running"
             determinate = running and item["stage"] in (
                 "downloading", "remuxing", "converting")
             if determinate:
@@ -658,11 +727,14 @@ if TK_OK:
                     row["bar"].stop()
                     row["bar"].configure(mode="determinate")
                     row["bar_mode"] = "done"
-                if item["status"] == "done":
+                if status == "done":
+                    row["bar"].configure(style="Yt.Ok.Horizontal.TProgressbar")
                     row["bar"]["value"] = 100.0
-                elif item["status"] == "error":
+                elif status == "error":
+                    row["bar"].configure(style="Yt.Bad.Horizontal.TProgressbar")
                     row["bar"]["value"] = 100.0
                 else:
+                    row["bar"].configure(style="Yt.Horizontal.TProgressbar")
                     row["bar"]["value"] = 0.0
             self._set_buttons(row, item)
 
@@ -680,7 +752,7 @@ if TK_OK:
                 if row is None:
                     row = self._create_row(item)
                     self.rows[item["id"]] = row
-                    row["frame"].pack(fill="x", pady=(0, 8), padx=12)
+                    row["frame"].pack(fill="x", pady=(0, 6), padx=14)
                 self._update_row(row, item)
             for item_id in list(self.rows):
                 if item_id not in seen:
