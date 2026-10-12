@@ -1,0 +1,1 @@
+"""The Tkinter queue window."""

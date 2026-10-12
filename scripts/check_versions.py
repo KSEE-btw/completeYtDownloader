@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Keep the version in one place.
 
-The version lives in extension/manifest.json.  host/ytgrab_core.py repeats it
+The version lives in extension/manifest.json.  src/ytgrab/__init__.py repeats it
 (so the executables know their own version), and docs/releases/v<version>.md
 must exist because the release workflow uses it as the release body.  If any of
 the three drifts, `ytgrab update` and the release build start disagreeing about
@@ -27,21 +27,21 @@ def main() -> int:
     with open(manifest_path, "r", encoding="utf-8") as fh:
         manifest_version = json.load(fh)["version"]
 
-    core_path = os.path.join(ROOT, "host", "ytgrab_core.py")
+    core_path = os.path.join(ROOT, "src", "ytgrab", "__init__.py")
     with open(core_path, "r", encoding="utf-8") as fh:
         core_text = fh.read()
     match = re.search(r'^VERSION\s*=\s*"([^"]+)"', core_text, re.M)
     core_version = match.group(1) if match else None
 
     print(f"extension/manifest.json : {manifest_version}")
-    print(f"host/ytgrab_core.py     : {core_version or '(VERSION not found)'}")
+    print(f"src/ytgrab/__init__.py  : {core_version or '(VERSION not found)'}")
 
     if core_version is None:
-        problems.append('host/ytgrab_core.py has no VERSION = "..." line')
+        problems.append('src/ytgrab/__init__.py has no VERSION = "..." line')
     elif core_version != manifest_version:
         problems.append(
             f"version mismatch: manifest.json is {manifest_version} "
-            f"but ytgrab_core.py is {core_version}")
+            f"but src/ytgrab/__init__.py is {core_version}")
 
     notes_rel = os.path.join("docs", "releases", f"v{manifest_version}.md")
     notes_path = os.path.join(ROOT, notes_rel)

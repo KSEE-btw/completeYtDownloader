@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ytgrab"
+description = "Firefox-only YouTube downloader for Premiere: a native-messaging host, a Tkinter queue window and a console CLI."
+readme = "README.md"
+requires-python = ">=3.9"
+dynamic = ["version"]
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/KSEE-btw/youtubeDownloaderXConverter"
+
+[project.scripts]
+# Development entry point only. The shipped executables (ytgrab-host.exe and
+# ytgrab.exe) are built with PyInstaller; this gives you the same CLI from a
+# checkout without shadowing an installed ytgrab.exe on PATH.
+ytgrab-dev = "ytgrab.presentation.cli.main:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+# The single source of truth; never repeat the number here.
+version = { attr = "ytgrab.VERSION" }
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+# Real problems only -- unused names, undefined names, syntax errors. The code
+# predates a formatter and the layout is deliberate, so this is a dead-code
+# gate rather than a style crusade.
+select = ["F", "E9"]

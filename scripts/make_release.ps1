@@ -62,8 +62,6 @@ New-Item -ItemType Directory -Force -Path $stage | Out-Null
 foreach ($pair in @(
     @("host\dist\ytgrab-host.exe", "ytgrab-host.exe"),
     @("host\dist\ytgrab.exe",      "ytgrab.exe"),
-    @("host\ytgrab_host.py",       "ytgrab_host.py"),
-    @("host\ytgrab_cli.py",        "ytgrab_cli.py"),
     @("scripts\setup.ps1",         "setup.ps1"),
     @("scripts\install.ps1",       "install.ps1"),
     @("scripts\uninstall.ps1",     "uninstall.ps1"))) {

@@ -17,7 +17,8 @@ import sys
 import threading
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HOST = os.path.join(HERE, "..", "host", "ytgrab_host.py")
+SRC = os.path.join(HERE, "..", "src")
+HOST = os.path.join(SRC, "ytgrab", "entrypoints", "host.py")
 PYTHON = os.environ.get("YTGRAB_PYTHON", sys.executable)
 
 
@@ -42,8 +43,10 @@ def reader(proc):
 
 def main():
     url = sys.argv[1] if len(sys.argv) > 1 else ""
+    env = dict(os.environ, PYTHONPATH=os.environ.get("PYTHONPATH", "") +
+               (os.pathsep + SRC if os.environ.get("PYTHONPATH") else SRC))
     proc = subprocess.Popen([PYTHON, HOST], stdin=subprocess.PIPE,
-                            stdout=subprocess.PIPE)
+                            stdout=subprocess.PIPE, env=env)
     threading.Thread(target=reader, args=(proc,), daemon=True).start()
 
     if not url:

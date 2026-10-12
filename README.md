@@ -277,29 +277,41 @@ entry picks H.264/AAC, which almost every 1080p video offers.
 
 ## Development
 
+The code is a layered package under `src\ytgrab\`:
+
+| package | role |
+| --- | --- |
+| `domain\` | pure logic: codec and container rules, format classification, editor maths, progress parsing |
+| `services\` | the work: the download pipeline, the queue engine, the job model, the command layer, releases |
+| `infrastructure\` | the outside world: config, tool discovery, subprocesses, loopback IPC, native messaging, install/update, HTTP |
+| `presentation\ui\` | the Tkinter queue window, theme and widget helpers |
+| `presentation\cli\` | the console CLI (`update`, `notes`, `version`, `config`, `ui`) |
+| `entrypoints\` | the two frozen executables: `host.py` and `cli.py` |
+
+Dependencies point one way — `presentation` and `services` use `infrastructure`,
+which uses `domain`. Everything below assumes `src` is importable (from the repo
+root: `$env:PYTHONPATH = "$PWD\src"`).
+
 ```powershell
-python host\ytgrab_host.py --ping                  # tools + config
-python host\ytgrab_host.py --list "URL"            # raw format JSON
+python -m ytgrab.entrypoints.host --ping           # tools + config
+python -m ytgrab.entrypoints.host --list "URL"     # raw format JSON
 python scripts\show_formats.py "URL"               # pretty format table
 python scripts\test_host.py "URL"                  # talk the native protocol
 python scripts\test_host.py ui                     # ask the host to open the window
-python host\ytgrab_ui.py --ui                      # open the queue window directly
-python host\ytgrab_ui.py --headless                # run the queue with no window
-python host\ytgrab_ui.py --smoke                   # build + destroy the window (CI)
-python host\ytgrab_ui.py --self-test-url "URL"     # end-to-end: queue -> download
-python host\ytgrab_cli.py --help                   # the console CLI
+python -m ytgrab.entrypoints.host --ui             # open the queue window directly
+python -m ytgrab.entrypoints.host --headless       # run the queue with no window
+python -m ytgrab.entrypoints.host --smoke          # build + destroy the window (CI)
+python -m ytgrab.entrypoints.host --self-test-url "URL"   # queue -> download
+python -m ytgrab.entrypoints.cli --help            # the console CLI
 python scripts\check_versions.py                   # version parity + notes check
 ```
 
-The code is split into modules under `host\`:
+The regression suites live in `tests\` and run in CI:
 
-| file | role |
-| --- | --- |
-| `ytgrab_core.py` | config, tool discovery, codec rules and the download pipeline (shared) |
-| `ytgrab_ipc.py` | loopback JSON IPC + the `runtime.json` handshake |
-| `ytgrab_host.py` | the native-messaging bridge (and `--ui` dispatch) |
-| `ytgrab_ui.py` | the queue window, queue model and persistence |
-| `ytgrab_cli.py` | the console CLI: self-update, release notes, `ui` |
+```powershell
+python tests\run_all.py        # the offline suites
+python tests\run_all.py --net  # add the ones that download from YouTube
+```
 
 `scripts\test_host.py` speaks the real native-messaging framing, so it exercises
 exactly what Firefox does without opening a browser. A `download` now returns a

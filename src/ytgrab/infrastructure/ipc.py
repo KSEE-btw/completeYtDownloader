@@ -1,19 +1,4 @@
-#!/usr/bin/env python3
-"""Loopback IPC between the native-messaging host and the queue window.
-
-They are separate processes: Firefox spawns and kills the host, while the
-queue window lives on its own so downloads survive the browser.  The window
-opens a TCP listener on 127.0.0.1, then writes a small runtime file so the
-host can find it:
-
-    %USERPROFILE%\\.config\\ytgrab\\runtime.json
-    {"port": 51234, "token": "...", "pid": 1234, "version": "0.3.0"}
-
-Both sides speak newline-delimited JSON.  The token keeps other local
-programs from driving the queue.
-
-Standard library only.
-"""
+"""Loopback IPC between the native-messaging host and the queue window."""
 
 from __future__ import annotations
 
@@ -23,17 +8,11 @@ import socket
 import threading
 import time
 
-from ytgrab_core import CONFIG_DIR
-
+from ytgrab.infrastructure.config import CONFIG_DIR
 RUNTIME_PATH = os.path.join(CONFIG_DIR, "runtime.json")
-
 DEFAULT_TIMEOUT = 5.0
-
-
 class IpcError(Exception):
     """The queue window is not running, or did not answer."""
-
-
 def read_runtime():
     try:
         with open(RUNTIME_PATH, "r", encoding="utf-8") as fh:
@@ -43,16 +22,12 @@ def read_runtime():
     except Exception:
         return None
     return None
-
-
 def _write_runtime(data: dict) -> None:
     os.makedirs(CONFIG_DIR, exist_ok=True)
     tmp = RUNTIME_PATH + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh)
     os.replace(tmp, RUNTIME_PATH)
-
-
 def clear_runtime(expected_pid=None) -> None:
     rt = read_runtime()
     if expected_pid is not None and rt and rt.get("pid") != expected_pid:
@@ -61,8 +36,6 @@ def clear_runtime(expected_pid=None) -> None:
         os.remove(RUNTIME_PATH)
     except OSError:
         pass
-
-
 def request(payload: dict, timeout: float = DEFAULT_TIMEOUT) -> dict:
     """Send one request to a running queue window and return its reply."""
     rt = read_runtime()
@@ -87,16 +60,12 @@ def request(payload: dict, timeout: float = DEFAULT_TIMEOUT) -> dict:
         return json.loads(buf.split(b"\n", 1)[0].decode("utf-8"))
     except (OSError, ValueError) as exc:
         raise IpcError(str(exc) or "could not reach the queue window")
-
-
 def is_running(timeout: float = 1.5) -> bool:
     try:
         reply = request({"cmd": "status"}, timeout=timeout)
         return bool(reply.get("ok", False))
     except IpcError:
         return False
-
-
 def wait_until_running(timeout: float = 15.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -104,8 +73,6 @@ def wait_until_running(timeout: float = 15.0) -> bool:
             return True
         time.sleep(0.25)
     return False
-
-
 class Server:
     """Threaded JSON-lines server; discoverable through RUNTIME_PATH."""
 

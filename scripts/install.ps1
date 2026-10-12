@@ -121,12 +121,12 @@ if ($HostExe -and (Test-Path $HostExe)) {
     if ($cmd) { $Python = $cmd.Source }
   }
   $pySource = $null
-  foreach ($c in @((Join-Path $here "ytgrab_host.py"),
-                   (Join-Path $here "host\ytgrab_host.py"))) {
+  foreach ($c in @((Join-Path $here "src\ytgrab\entrypoints\host.py"),
+                   (Join-Path (Split-Path -Parent $here) "src\ytgrab\entrypoints\host.py"))) {
     if (Test-Path $c) { $pySource = $c; break }
   }
   if (-not $pySource) {
-    throw "found neither ytgrab-host.exe nor ytgrab_host.py; pass -HostExe <path>"
+    throw "found neither ytgrab-host.exe nor src\ytgrab\entrypoints\host.py; pass -HostExe <path>"
   }
   if (-not $Python -or -not (Test-Path $Python)) {
     throw "no host exe and python was not found; pass -Python C:\path\to\python.exe"
@@ -134,11 +134,12 @@ if ($HostExe -and (Test-Path $HostExe)) {
   $pythonw = Join-Path (Split-Path -Parent $Python) "pythonw.exe"
   if (-not (Test-Path $pythonw)) { $pythonw = $Python }
 
-  Copy-Item -Path $pySource -Destination (Join-Path $installDir "ytgrab_host.py") -Force
-  $bat = "@echo off`r`n`"$pythonw`" `"%~dp0ytgrab_host.py`" %*"
+  # run the package straight from the checkout: PYTHONPATH points at src\
+  $srcDir = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $pySource))
+  $bat = "@echo off`r`nset `"PYTHONPATH=$srcDir`"`r`n`"$pythonw`" -m ytgrab.entrypoints.host %*"
   Set-Content -Path (Join-Path $installDir "ytgrab-launcher.bat") -Value $bat -Encoding ASCII
   $targetExe = Join-Path $installDir "ytgrab-launcher.bat"
-  Write-Host "host launcher   : $targetExe  (pythonw)" -ForegroundColor Yellow
+  Write-Host "host launcher   : $targetExe  (pythonw -m ytgrab)" -ForegroundColor Yellow
   Write-Host "  tip: build ytgrab-host.exe to avoid needing Python" -ForegroundColor DarkGray
 }
 

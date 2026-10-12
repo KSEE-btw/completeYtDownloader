@@ -9,13 +9,14 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "..", "host"))
+                                "..", "src"))
 
 if len(sys.argv) > 2 and sys.argv[1] == "--json":
     data = json.load(open(sys.argv[2], encoding="utf-8-sig"))
 else:
-    import ytgrab_host as host
-    data = host.simplify_formats(host.run_ytdlp_json(sys.argv[1]))
+    from ytgrab.domain import formats
+    from ytgrab.services import catalog
+    data = formats.simplify_formats(catalog.run_ytdlp_json(sys.argv[1]))
 
 print(f"{data['title']}  id={data['video_id']}  dur={data['duration']}s")
 print(f"{'kind':6} {'h':>5} {'fps':>5} {'ext':4} {'video':7} {'audio':7} "

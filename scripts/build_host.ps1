@@ -20,6 +20,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root    = Split-Path -Parent $PSScriptRoot
 $hostDir = Join-Path $root "host"
+$srcDir  = Join-Path $root "src"
 
 if (-not $Python) {
   $cmd = Get-Command python -ErrorAction SilentlyContinue
@@ -43,10 +44,11 @@ function Build-YtgrabExe {
     "--noconfirm", "--clean",
     $mode,
     "--name", $Name,
+    "--paths", $srcDir,
     "--distpath", $distPath,
     "--workpath", $workPath,
     "--specpath", $specPath
-  ) + $Extra + @((Join-Path $hostDir $Entry))
+  ) + $Extra + @((Join-Path $root $Entry))
   Write-Host "building: $Python $($pyArgs -join ' ')" -ForegroundColor Cyan
   & $Python @pyArgs
   if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed for $Name" }
@@ -54,7 +56,7 @@ function Build-YtgrabExe {
 
 # The host is a GUI app: no console flashes when Firefox launches it, and the
 # queue window does not drag a console along.
-Build-YtgrabExe -Name "ytgrab-host" -Entry "ytgrab_host.py" -Extra @(
+Build-YtgrabExe -Name "ytgrab-host" -Entry "src\ytgrab\entrypoints\host.py" -Extra @(
   "--noconsole",
   "--hidden-import", "tkinter",
   "--hidden-import", "tkinter.ttk",
@@ -65,7 +67,7 @@ Build-YtgrabExe -Name "ytgrab-host" -Entry "ytgrab_host.py" -Extra @(
 # The CLI is a console app: it prints progress and release notes.  It opens the
 # queue window by re-running ytgrab-host.exe, so it never needs tkinter itself
 # -- excluding it keeps the bundle from shipping the Tk runtime twice.
-Build-YtgrabExe -Name "ytgrab" -Entry "ytgrab_cli.py" -Extra @(
+Build-YtgrabExe -Name "ytgrab" -Entry "src\ytgrab\entrypoints\cli.py" -Extra @(
   "--exclude-module", "tkinter",
   "--exclude-module", "tkinter.filedialog",
   "--exclude-module", "_tkinter"
