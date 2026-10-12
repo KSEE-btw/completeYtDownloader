@@ -237,7 +237,7 @@ function Step-Tool([string]$label, [string]$probe, [string]$wingetId, [string]$w
 }
 
 function Step-Host {
-  Write-Head "ytgrab helper"
+  Write-Head "completeYtDownloader helper"
   Write-Info "the small local program the extension talks to"
   $script = Join-Path $here "install.ps1"
   if (-not (Test-Path $script)) {
@@ -256,7 +256,7 @@ function Step-Host {
 function Step-Cookies {
   Write-Head "YouTube sign-in (cookies)"
   Write-Info "YouTube blocks many downloads that are not tied to a signed-in browser"
-  Write-Info "('Sign in to confirm you're not a bot'). ytgrab can reuse the cookies"
+  Write-Info "('Sign in to confirm you're not a bot'). completeYtDownloader can reuse the cookies"
   Write-Info "from a browser you are signed into YouTube with; they stay on this PC."
 
   $cands = @()
@@ -335,7 +335,7 @@ function Step-Browser {
     if (-not $choice) { Write-Warn2 "no Firefox found"; return }
   } else {
     Write-Host ""
-    Write-Host "   Install the ytgrab extension into which browser? [1] " -NoNewline
+    Write-Host "   Install the completeYtDownloader extension into which browser? [1] " -NoNewline
     $a = Read-Host
     $n = 1
     if (-not [string]::IsNullOrWhiteSpace($a) -and -not [int]::TryParse($a, [ref]$n)) { $n = 1 }
@@ -345,7 +345,7 @@ function Step-Browser {
 
   Write-Host ""
   if ($choice.Kind -eq "chromium") {
-    Write-Warn2 "$($choice.Name): ytgrab is a Firefox add-on only."
+    Write-Warn2 "$($choice.Name): completeYtDownloader is a Firefox add-on only."
     Write-Info "That is deliberate, not an oversight. Chromium browsers need their own"
     Write-Info "build (service-worker background, chrome.* APIs, a pinned extension id,"
     Write-Info "PNG icons) and, with no store listing, a policy or Developer Mode"
@@ -356,7 +356,7 @@ function Step-Browser {
   }
 
   if (Test-FirefoxExtensionSeen) {
-    Write-Ok "ytgrab already has an install record in Firefox"
+    Write-Ok "completeYtDownloader already has an install record in Firefox"
     Write-Dim "if it does not appear in about:addons, continue below"
   }
 
@@ -377,7 +377,7 @@ function Step-Browser {
   if (-not $go) { Write-Warn2 "skipped"; return }
 
   Start-Process -FilePath $choice.Path -ArgumentList @("`"$xpi`"")
-  Write-Info "Firefox should ask you to add ytgrab -- click 'Add'."
+  Write-Info "Firefox should ask you to add completeYtDownloader -- click 'Add'."
   Pause-ForUser "Press Enter once you have clicked 'Add'"
   $state.extension = "install prompted"
 }
@@ -386,13 +386,13 @@ function Step-Browser {
 # main
 # --------------------------------------------------------------------------- #
 Write-Host ""
-Write-Host "  ytgrab installer" -ForegroundColor Cyan
+Write-Host "  completeYtDownloader installer" -ForegroundColor Cyan
 Write-Host "  YouTube -> Premiere downloads, right in your browser"
 Write-Host ""
 Write-Info "This sets up a few things, in order, and you can skip any of them:"
 Write-Info "  1. yt-dlp   (downloads the video)"
 Write-Info "  2. ffmpeg   (converts it only when the codecs require it)"
-Write-Info "  3. the ytgrab helper (the local program the browser talks to)"
+Write-Info "  3. the completeYtDownloader helper (the local program the browser talks to)"
 Write-Info "  4. YouTube cookies (so YouTube does not block the download)"
 Write-Info "  5. the browser extension"
 Write-Host ""
@@ -420,11 +420,11 @@ Step-Browser
 # --------------------------------------------------------------------------- #
 Write-Host ""
 Write-Host "== summary" -ForegroundColor Cyan
-Write-Host ("   yt-dlp            : {0}" -f $state.ytdlp)
-Write-Host ("   ffmpeg            : {0}" -f $state.ffmpeg)
-Write-Host ("   ytgrab helper     : {0}" -f $state.host)
-Write-Host ("   youtube cookies   : {0}" -f $state.cookies)
-Write-Host ("   browser extension : {0}" -f $state.extension)
+Write-Host ("   yt-dlp                      : {0}" -f $state.ytdlp)
+Write-Host ("   ffmpeg                      : {0}" -f $state.ffmpeg)
+Write-Host ("   completeYtDownloader helper : {0}" -f $state.host)
+Write-Host ("   youtube cookies             : {0}" -f $state.cookies)
+Write-Host ("   browser extension           : {0}" -f $state.extension)
 Write-Host ""
 
 if ($state.extension -like "install prompted" -or (Test-FirefoxExtensionSeen)) {

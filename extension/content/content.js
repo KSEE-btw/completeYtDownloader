@@ -69,7 +69,7 @@
 
     const fab = document.createElement("div");
     fab.className = "fab";
-    fab.title = "ytgrab";
+    fab.title = "completeYtDownloader";
 
     const SVG = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(SVG, "svg");

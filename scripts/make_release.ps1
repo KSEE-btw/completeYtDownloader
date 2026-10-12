@@ -23,14 +23,14 @@ param(
   [string]$ApiSecret = $env:AMO_JWT_SECRET,
   [string]$Python    = "",
   [string]$WebExt    = "8",
-  [string]$Repo      = "KSEE-btw/youtubeDownloaderXConverter"
+  [string]$Repo      = "KSEE-btw/completeYtDownloader"
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 
 Write-Host ""
-Write-Host "=== ytgrab release build ===" -ForegroundColor Cyan
+Write-Host "=== completeYtDownloader release build ===" -ForegroundColor Cyan
 
 # --- 1. standalone executables -----------------------------------------------
 if ($SkipHostBuild) {
@@ -122,15 +122,15 @@ Install the extension (this build is UNSIGNED, so it is temporary):
 }
 
 $readme = @"
-ytgrab -- quick start (Windows)
-===============================
+completeYtDownloader -- quick start (Windows)
+=============================================
 
 1. Run the interactive installer:
 
      powershell -ExecutionPolicy Bypass -File setup.ps1
 
    It installs yt-dlp, then ffmpeg, then the local helper, and finally asks
-   which browser to add ytgrab to. Nothing needs administrator rights, every
+   which browser to add completeYtDownloader to. Nothing needs administrator rights, every
    step is a prompt you can decline, and it is safe to run again.
 
 2. $installLine

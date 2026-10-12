@@ -19,7 +19,7 @@ from ytgrab.log import log
 from ytgrab.protocol import ENQUEUE_FIELDS
 from ytgrab.services.catalog import run_ytdlp_json
 from ytgrab.services.ui_launcher import _launch_ui, ensure_ui
-from ytgrab import APP, VERSION
+from ytgrab import APP, NAME, VERSION
 
 
 
@@ -109,7 +109,7 @@ def handle(msg: dict) -> None:
             return
         if not ensure_ui():
             fail(msg_id,
-                 "could not start the ytgrab queue window. Re-run "
+                 f"could not start the {NAME} queue window. Re-run "
                  "install.ps1, then try again.")
             return
         try:
@@ -193,7 +193,7 @@ def main() -> None:
 def _cli() -> int:
     import argparse
     parser = argparse.ArgumentParser(
-        prog="ytgrab-host", description="ytgrab native messaging host")
+        prog="ytgrab-host", description=f"{NAME} native messaging host")
     parser.add_argument("--ping", action="store_true",
                         help="print tool/config status and exit")
     parser.add_argument("--list", metavar="URL",

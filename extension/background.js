@@ -65,7 +65,7 @@ browser.runtime.onConnect.addListener((port) => {
         port.postMessage({
           type: "error",
           id: msg && msg.id,
-          message: "native host unavailable — is ytgrab installed?",
+          message: "native host unavailable — is completeYtDownloader installed?",
         });
       } catch (_) {}
       return;

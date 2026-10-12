@@ -93,7 +93,7 @@ New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 
 if (-not $Quiet) {
   Write-Host ""
-  Write-Host "ytgrab host installer" -ForegroundColor Cyan
+  Write-Host "completeYtDownloader host installer" -ForegroundColor Cyan
   Write-Host "  installing to $installDir"
   Write-Host ""
 }
@@ -180,7 +180,7 @@ if ($cliExe) {
 $manifestPath = Join-Path $installDir "ytgrab.manifest.json"
 $manifest = [ordered]@{
   name               = "ytgrab"
-  description        = "ytgrab download + Premiere conversion host"
+  description        = "completeYtDownloader download + Premiere conversion host"
   path               = $targetExe
   type               = "stdio"
   allowed_extensions = @("ytgrab@kunal.local")

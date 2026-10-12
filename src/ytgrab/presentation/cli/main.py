@@ -19,12 +19,12 @@ from ytgrab.infrastructure.ipc import IpcError, is_running, request
 from ytgrab.infrastructure.net import API_BASE, REPO, download, get_text, verify_sums
 from ytgrab.infrastructure.tools import child_kwargs
 from ytgrab.services.releases import all_releases, find_asset, latest_release, notes_between, notes_for, release_version
-from ytgrab import APP, SRC_ROOT, VERSION
+from ytgrab import APP, NAME, SRC_ROOT, VERSION
 def cmd_update(opts) -> int:
     current_text = installed_version()
     current = parse_version(current_text)
 
-    head("ytgrab update")
+    head(f"{NAME} update")
     say(f"  repository : {REPO}")
     say(f"  installed  : {APP} {current_text}  ({install_dir()})")
 
@@ -177,7 +177,7 @@ def cmd_config(opts) -> int:
     return 0
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog=APP, description="ytgrab updates and queue window")
+        prog=APP, description=f"{NAME} updates and queue window")
     sub = parser.add_subparsers(dest="command")
 
     p_update = sub.add_parser("update", help="download and install an update")

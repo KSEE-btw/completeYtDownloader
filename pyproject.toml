@@ -11,7 +11,7 @@ dynamic = ["version"]
 dependencies = []
 
 [project.urls]
-Repository = "https://github.com/KSEE-btw/youtubeDownloaderXConverter"
+Repository = "https://github.com/KSEE-btw/completeYtDownloader"
 
 [project.scripts]
 # Development entry point only. The shipped executables (ytgrab-host.exe and

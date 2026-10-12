@@ -1,13 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "ytgrab — download & convert for Premiere",
-  "version": "0.3.14",
+  "name": "completeYtDownloader — download & convert for Premiere",
+  "version": "0.3.15",
   "description": "Pick a format and download any video with yt-dlp, converting to a Premiere-compatible file only when needed. A small desktop window tracks the queue and progress.",
   "browser_specific_settings": {
     "gecko": {
       "id": "ytgrab@kunal.local",
       "strict_min_version": "115.0",
-      "update_url": "https://raw.githubusercontent.com/KSEE-btw/youtubeDownloaderXConverter/main/docs/updates.json",
+      "update_url": "https://raw.githubusercontent.com/KSEE-btw/completeYtDownloader/main/docs/updates.json",
       "data_collection_permissions": {
         "required": ["none"]
       }
@@ -22,7 +22,7 @@
     "scripts": ["background.js"]
   },
   "action": {
-    "default_title": "ytgrab",
+    "default_title": "completeYtDownloader",
     "default_popup": "popup/popup.html",
     "default_icon": {
       "48": "icons/icon.svg",

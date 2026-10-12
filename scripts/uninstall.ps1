@@ -106,7 +106,7 @@ if ($Deep) {
           $total += $n
         }
       }
-      if ($total -eq 0) { Write-Host "no ytgrab traces left in any Firefox profile" }
+      if ($total -eq 0) { Write-Host "no completeYtDownloader traces left in any Firefox profile" }
     }
   }
 }
@@ -114,5 +114,5 @@ if ($Deep) {
 # --- done -------------------------------------------------------------------
 Write-Host ""
 Write-Host "Done." -ForegroundColor Green
-Write-Host "If ytgrab is still listed in about:addons, remove it there; a temporary"
+Write-Host "If completeYtDownloader is still listed in about:addons, remove it there; a temporary"
 Write-Host "add-on goes away on its own when Firefox restarts."

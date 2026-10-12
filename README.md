@@ -1,15 +1,21 @@
 <div align="center">
 
-<img src="extension/icons/icon.svg" width="104" height="104" alt="ytgrab">
+<img src="extension/icons/icon.svg" width="104" height="104" alt="completeYtDownloader">
 
-# ytgrab
+# completeYtDownloader
 
 **Download YouTube videos straight into Premiere Pro — from a button on the page.**
 
 A tiny Firefox extension, a small local helper, and no needless re-encoding.
 
-[![Latest release](https://img.shields.io/github/v/release/KSEE-btw/youtubeDownloaderXConverter?style=flat-square&color=4f8cff&label=release)](https://github.com/KSEE-btw/youtubeDownloaderXConverter/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/KSEE-btw/youtubeDownloaderXConverter/total?style=flat-square&color=4f8cff&label=downloads)](https://github.com/KSEE-btw/youtubeDownloaderXConverter/releases)
+> **One name, two spellings.** Anything you *read* — the add-on entry, the popup
+> header, the queue window — says **completeYtDownloader**. Anything you *type*
+> is still `ytgrab`: the command, `ytgrab.exe`, the `%LOCALAPPDATA%\ytgrab`
+> folder, the registry key and the add-on ID all kept their original names, so
+> copies that are already installed keep updating themselves.
+
+[![Latest release](https://img.shields.io/github/v/release/KSEE-btw/completeYtDownloader?style=flat-square&color=4f8cff&label=release)](https://github.com/KSEE-btw/completeYtDownloader/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/KSEE-btw/completeYtDownloader/total?style=flat-square&color=4f8cff&label=downloads)](https://github.com/KSEE-btw/completeYtDownloader/releases)
 [![Firefox 115+](https://img.shields.io/badge/Firefox-115%2B-ff7139?logo=firefox&logoColor=white&style=flat-square)](#requirements)
 [![Windows 10 / 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?logo=windows&logoColor=white&style=flat-square)](#requirements)
 [![No admin rights](https://img.shields.io/badge/install-no%20admin%20rights-2ea043?style=flat-square)](#install)
@@ -19,7 +25,7 @@ A tiny Firefox extension, a small local helper, and no needless re-encoding.
 
 ---
 
-**ytgrab** puts a format picker right on the video page. You choose a stream,
+**completeYtDownloader** puts a format picker right on the video page. You choose a stream,
 the download lands in a queue you can pause and resume, and the file that comes
 out is one **Premiere Pro opens directly** — converted only when its codecs
 actually make that necessary.
@@ -69,9 +75,9 @@ will not touch. Most downloaders "solve" that by re-encoding everything — so
 even a plain 1080p video that was already H.264 + AAC gets torn apart and put
 back together for no reason, taking minutes and losing quality.
 
-ytgrab does the opposite:
+completeYtDownloader does the opposite:
 
-- at **1080p**, YouTube serves H.264 + AAC in an MP4 → ytgrab downloads it and
+- at **1080p**, YouTube serves H.264 + AAC in an MP4 → completeYtDownloader downloads it and
   **does not convert anything**;
 - if you pick VP9/AV1/Opus → it **converts to a Premiere-friendly file** on the
   way to disk (H.264/AAC MP4, DNxHR or ProRes);
@@ -101,7 +107,7 @@ ytgrab does the opposite:
 ### 🎁 Just want to use it? Grab the release bundle
 
 1. **Download** the newest `ytgrab-<version>-windows.zip` from the
-   [releases page](https://github.com/KSEE-btw/youtubeDownloaderXConverter/releases/latest).
+   [releases page](https://github.com/KSEE-btw/completeYtDownloader/releases/latest).
 2. **Unzip it** anywhere — Desktop is fine. You do not need to keep the folder
    afterwards.
 3. **Run the installer** in that folder:
@@ -120,7 +126,7 @@ and running it again is always safe.
 ### 🧑‍💻 Working from a checkout instead?
 
 ```powershell
-cd ytgrab
+cd completeYtDownloader
 powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 ```
 
@@ -181,10 +187,10 @@ flowchart TB
                                                                        │
                                                                    loopback IPC
                                                                        │
-                                                       ┌───────────────▼────────────────┐
-                                                       │  ytgrab queue window (Tkinter) │
-                                                       │  owns the queue + progress     │
-                                                       └───────────────┬────────────────┘
+                                                       ┌───────────────▼──────────────────────────────┐
+                                                       │  completeYtDownloader queue window (Tkinter) │
+                                                       │  owns the queue + progress                   │
+                                                       └───────────────┬──────────────────────────────┘
                                                                        │
                                                              yt-dlp ───┴─── ffmpeg
 ```
@@ -211,7 +217,7 @@ The queue window is the *same* executable in another mode
    | `repack` | right codecs, wrong container (e.g. H.264 in MKV) | remuxed in seconds, no re-encode |
    | `convert` | VP9 / AV1 / Opus / Vorbis | a real re-encode |
 
-2. **Download.** With the *Auto — best Premiere-safe* entry selected, ytgrab
+2. **Download.** With the *Auto — best Premiere-safe* entry selected, completeYtDownloader
    takes the best **H.264 + AAC** stream on offer, which is what the common
    1080p case has — so that case never converts.
 
@@ -255,7 +261,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 **From a checkout** (builds the exes first):
 
 ```powershell
-cd ytgrab
+cd completeYtDownloader
 # builds host\dist\ytgrab-host.exe (helper + queue window)
 #    and host\dist\ytgrab.exe      (the console CLI), installs both,
 #    and registers the host with Firefox
@@ -303,7 +309,7 @@ From then on it loads at every start like any other add-on, and updates itself
 <summary><strong>Signing it yourself</strong> (only needed if you build your own <code>.xpi</code>)</summary>
 
 Release Firefox will only keep an add-on permanently if **Mozilla has signed
-it** — that is a Firefox security rule, not a ytgrab limitation. Signing is free
+it** — that is a Firefox security rule, not a completeYtDownloader limitation. Signing is free
 and publishes nothing unless you ask it to.
 
 Once per machine, grab API credentials from
@@ -343,7 +349,7 @@ anywhere** — paste any URL yt-dlp understands, not just YouTube.
    Leave it on *Auto — best Premiere-safe* if you just want a file Premiere
    opens.
 2. **Choose where files land** with the **…** button in the **Save to** bar.
-   Pick a folder once and ytgrab remembers it.
+   Pick a folder once and completeYtDownloader remembers it.
 3. **Leave "Convert to a Premiere-compatible file — only if needed" ticked**
    and choose a target codec — or untick it to keep the original bytes exactly
    as they came.
@@ -372,7 +378,7 @@ what makes them survive closing either one.
 - **Closing the window keeps everything running** — it minimises to the
   taskbar. Reopen it from **Open queue window**, or by running
   `%LOCALAPPDATA%\ytgrab\ytgrab-host.exe --ui`.
-- **Quit** (in the window, or `Ctrl+Q`) stops ytgrab. Unfinished items are saved
+- **Quit** (in the window, or `Ctrl+Q`) stops completeYtDownloader. Unfinished items are saved
   and **resume the next time the window starts**; finished items stay as
   history.
 - The **Save to** bar shows where downloads land; **Change…** opens the folder
@@ -457,7 +463,7 @@ ytgrab config KEY VAL   # change one, e.g. cookies_from_browser chrome
 ```
 
 `ytgrab update` reads the newest
-[GitHub release](https://github.com/KSEE-btw/youtubeDownloaderXConverter/releases), compares it
+[GitHub release](https://github.com/KSEE-btw/completeYtDownloader/releases), compares it
 with the version recorded in `%LOCALAPPDATA%\ytgrab\version.txt`, asks before it
 changes anything (add `--yes` to skip the prompt), downloads the bundle,
 **checks its SHA-256** against the published `SHA256SUMS.txt`, and only then
@@ -686,13 +692,13 @@ The extension itself goes away inside Firefox: a permanent install in
   (The helper also reads the saved `PATH` from the registry, so a tool installed
   moments ago is found without restarting Firefox.)
 - **"Sign in to confirm you're not a bot"** — YouTube wants a signed-in session.
-  ytgrab reuses browser cookies (`cookies_from_browser`, default `auto` =
+  completeYtDownloader reuses browser cookies (`cookies_from_browser`, default `auto` =
   Firefox). Point it at the browser you are signed into YouTube with:
   `ytgrab config cookies_from_browser chrome` (or `firefox`, `edge`, `brave`,
   `none`). A newer yt-dlp helps too.
 - **Nothing appears on the page** — the extension must be loaded in
   `about:debugging` or installed permanently; check the browser console for a
-  ytgrab error.
+  completeYtDownloader error.
 - **Firefox refuses the `.xpi`** ("could not be installed because it is not
   verified") — that is the unsigned build. Sign it
   (`scripts\package.ps1 -Sign`) or switch to Firefox Developer Edition.
@@ -750,7 +756,7 @@ Playlists, pasting several links at once and skipping files you already have are
 <details>
 <summary><strong>Will it convert my 1080p video for no reason?</strong></summary>
 
-It should not: at 1080p YouTube offers H.264 + AAC in an MP4, so ytgrab
+It should not: at 1080p YouTube offers H.264 + AAC in an MP4, so completeYtDownloader
 downloads it, verifies it, and stops. Conversion only happens for streams that
 Premiere cannot read (VP9/AV1/Opus) or when you explicitly ask for a target like
 ProRes or DNxHR.
@@ -761,7 +767,7 @@ ProRes or DNxHR.
 
 The queue window keeps working while it is open, and deleting or closing the
 popup never interrupts it. Closing the *window* only minimises it to the
-taskbar. Quitting the window stops ytgrab, but unfinished items are saved and
+taskbar. Quitting the window stops completeYtDownloader, but unfinished items are saved and
 resume next time; a tray icon that keeps it alive quietly is
 [roadmap item 4](#roadmap).
 </details>
@@ -780,6 +786,6 @@ installed. The CLI (`ytgrab.exe`) is a separate, smaller build without Tkinter.
 
 Built for one workflow: **grab it, cut it, don't re-encode it.**
 
-[Report a bug](https://github.com/KSEE-btw/youtubeDownloaderXConverter/issues) · [Releases](https://github.com/KSEE-btw/youtubeDownloaderXConverter/releases) · [Release notes](docs/releases)
+[Report a bug](https://github.com/KSEE-btw/completeYtDownloader/issues) · [Releases](https://github.com/KSEE-btw/completeYtDownloader/releases) · [Release notes](docs/releases)
 
 </div>

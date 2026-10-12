@@ -203,7 +203,7 @@
     const queueBtn = el("button", {
       class: "ghost",
       text: "Open queue window",
-      title: "Track progress and cancel downloads in the ytgrab window",
+      title: "Track progress and cancel downloads in the completeYtDownloader window",
       onclick: openQueue,
     });
 
@@ -270,7 +270,7 @@
     ]);
 
     const head = el("div", { class: "head" }, [
-      el("span", { class: "logo", text: "ytgrab" }),
+      el("span", { class: "logo", text: "completeYtDownloader" }),
       el("span", { class: "spacer" }),
       hostBadge,
       opts.showClose
@@ -429,7 +429,7 @@
 
     function send(msg) {
       if (!state.port) {
-        setStatus("Not connected to the ytgrab host.", "bad");
+        setStatus("Not connected to the completeYtDownloader host.", "bad");
         return;
       }
       try {
@@ -467,7 +467,7 @@
           hostBadge.textContent = "host not responding";
           hostBadge.className = "host-badge bad";
           setStatus(
-            "The ytgrab helper is not answering. Try again, or restart " +
+            "The completeYtDownloader helper is not answering. Try again, or restart " +
               "Firefox if it keeps happening.",
             "bad"
           );
@@ -496,7 +496,7 @@
         } else {
           setStatus(
             msg.message ||
-              "Lost the ytgrab host. Run scripts/install.ps1, then fully " +
+              "Lost the completeYtDownloader host. Run scripts/install.ps1, then fully " +
                 "restart Firefox and reload the extension.",
             "bad"
           );
@@ -511,7 +511,7 @@
         state.config = msg.config || {};
         state.targets = msg.targets || {};
         const ok = msg.ok;
-        hostBadge.textContent = ok ? `ytgrab ${msg.version}` : "tools missing";
+        hostBadge.textContent = ok ? `host ${msg.version}` : "tools missing";
         hostBadge.className = "host-badge " + (ok ? "ok" : "bad");
         if (!ok) {
           const missing = !(msg.tools.ytdlp || {}).path
@@ -592,7 +592,7 @@
           span.className = "ok";
           span.textContent =
             "Added to the queue \u2014 it keeps downloading while this " +
-            "closes. Track it in the ytgrab window.";
+            "closes. Track it in the completeYtDownloader window.";
           statusEl.appendChild(span);
           statusEl.className = "status ok";
           openBtn.hidden = true;
@@ -701,7 +701,7 @@
       const groups = [
         ["Video + audio", "av"],
         [ensureAudio
-          ? "Video only \u2014 ytgrab adds the best audio"
+          ? "Video only \u2014 completeYtDownloader adds the best audio"
           : "Video only", "video"],
         ["Audio only", "audio"],
       ];
@@ -723,7 +723,7 @@
               ? `${f.vcodec_raw || ""} + ${f.acodec_raw || ""}`
               : f.kind === "video"
                 ? (ensureAudio
-                    ? `${f.vcodec_raw || ""} \u2014 video-only stream; ytgrab ` +
+                    ? `${f.vcodec_raw || ""} \u2014 video-only stream; completeYtDownloader ` +
                       "muxes the best audio in"
                     : `${f.vcodec_raw || ""} \u2014 video-only stream; no audio`)
                 : `${f.acodec_raw || ""}`,

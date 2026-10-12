@@ -6,6 +6,7 @@ import queue as _queue
 import os
 import subprocess
 
+from ytgrab import NAME
 from ytgrab.infrastructure.config import DEFAULT_CONFIG, choose_folder, load_config, reset_config_cache, save_config
 from ytgrab.infrastructure.files import expand
 from ytgrab.infrastructure.tools import child_kwargs
@@ -27,7 +28,7 @@ if TK_OK:
             self._closing = False
             self._tick_after = None
 
-            self.title("ytgrab \u2014 download queue")
+            self.title(f"{NAME} \u2014 download queue")
             self.geometry("820x600")
             self.minsize(720, 400)
             # light/dark, from config if the user chose one, else the OS
@@ -138,7 +139,7 @@ if TK_OK:
             tk.Label(header, text="\u25b6", bg=p["header"], fg=p["accent"],
                      font=(self.font, 12, "bold")).pack(side="left",
                                                         padx=(0, 8))
-            tk.Label(header, text="ytgrab queue", bg=p["header"], fg=p["fg"],
+            tk.Label(header, text=f"{NAME} queue", bg=p["header"], fg=p["fg"],
                      font=(self.font, 12, "bold")).pack(side="left")
             self.summary = tk.Label(header, text="", bg=p["header"],
                                     fg=p["muted"], font=(self.font, 9))
@@ -221,14 +222,14 @@ if TK_OK:
                 self.list, bg=p["bg"], fg=p["muted"], justify="center",
                 font=(self.font, 10),
                 text=("No downloads yet.\n\n"
-                      "Click the blue ytgrab arrow on a page to add one."))
+                      f"Click the blue {NAME} arrow on a page to add one."))
 
             # --- footer ---
             self.footer = tk.Label(
                 self, bg=p["header"], fg=p["muted"], anchor="w", padx=14,
                 pady=6, font=(self.font, 8),
                 text="Closing this window keeps downloads running in the "
-                     "background. Use Quit to stop ytgrab.")
+                     f"background. Use Quit to stop {NAME}.")
             self.footer.pack(fill="x", side="bottom")
             tk.Frame(self, bg=p["border"], height=1).pack(fill="x",
                                                           side="bottom")
@@ -492,7 +493,7 @@ if TK_OK:
             self.iconify()
             self.footer.configure(
                 text="Still running in the background. Reopen from the "
-                     "ytgrab button, or use Quit to stop ytgrab.")
+                     f"{NAME} button, or use Quit to stop {NAME}.")
 
         def _cancel_tick(self) -> None:
             """Drop the pending refresh so it cannot fire after destroy()."""
@@ -506,7 +507,7 @@ if TK_OK:
         def _quit(self) -> None:
             if self.qm.counts().get("running"):
                 if not messagebox.askyesno(
-                        "ytgrab",
+                        NAME,
                         "A download is still running. Quit anyway?\n\n"
                         "Unfinished items will resume next time you open "
                         "the queue."):
@@ -624,4 +625,4 @@ if TK_OK:
                 else:
                     raise OSError("path does not exist")
             except Exception as exc:  # noqa: BLE001
-                messagebox.showwarning("ytgrab", f"Could not open:\n{exc}")
+                messagebox.showwarning(NAME, f"Could not open:\n{exc}")

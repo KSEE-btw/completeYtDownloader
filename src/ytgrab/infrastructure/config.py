@@ -8,7 +8,7 @@ import threading
 
 from ytgrab.infrastructure.files import expand
 from ytgrab.log import log
-from ytgrab import APP
+from ytgrab import APP, NAME
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", APP)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
 DEFAULT_CONFIG = {
@@ -147,7 +147,7 @@ def choose_folder(start: str = "", parent=None) -> str:
             pass
 
     options = {"parent": root,
-               "title": "Choose where ytgrab saves downloads",
+               "title": f"Choose where {NAME} saves downloads",
                "mustexist": True}
     if start:
         options["initialdir"] = expand(start)

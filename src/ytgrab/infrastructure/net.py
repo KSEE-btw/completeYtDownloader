@@ -11,7 +11,7 @@ import urllib.request
 from ytgrab.console import say
 from ytgrab import APP, VERSION
 # GitHub coordinates.  Overridable so tests can point at a local mock server.
-REPO = os.environ.get("YTGRAB_REPO", "KSEE-btw/youtubeDownloaderXConverter")
+REPO = os.environ.get("YTGRAB_REPO", "KSEE-btw/completeYtDownloader")
 API_BASE = os.environ.get("YTGRAB_API_BASE", "https://api.github.com").rstrip("/")
 RAW_BASE = os.environ.get(
     "YTGRAB_RAW_BASE",

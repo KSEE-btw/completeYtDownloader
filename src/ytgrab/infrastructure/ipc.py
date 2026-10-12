@@ -8,6 +8,7 @@ import socket
 import threading
 import time
 
+from ytgrab import NAME
 from ytgrab.infrastructure.config import CONFIG_DIR
 RUNTIME_PATH = os.path.join(CONFIG_DIR, "runtime.json")
 DEFAULT_TIMEOUT = 5.0
@@ -40,7 +41,7 @@ def request(payload: dict, timeout: float = DEFAULT_TIMEOUT) -> dict:
     """Send one request to a running queue window and return its reply."""
     rt = read_runtime()
     if not rt:
-        raise IpcError("the ytgrab queue window is not running")
+        raise IpcError(f"the {NAME} queue window is not running")
     body = dict(payload)
     body["token"] = rt["token"]
     try:
