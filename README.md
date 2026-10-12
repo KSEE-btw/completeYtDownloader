@@ -145,7 +145,17 @@ Downloads run in a small desktop window, not in the popup — so the progress yo
 started survives closing the popup, and even closing Firefox.
 
 - Each row shows the title, live status, a progress bar, speed and ETA, plus
-  **Cancel** / **Retry** / **Remove** / **Show file** as appropriate.
+  **Cancel** / **Pause** / **Resume** / **Retry** / **Remove** / **Show file**
+  as appropriate, and **▲ ▼** to move a waiting item up or down the queue.
+- **Several downloads at once.** The **Downloading _n_ at once** picker at the
+  top sets how many run in parallel — 2 by default, up to 8. (The fragments
+  *inside* one file are already downloaded in parallel; this is about whole
+  videos.) The queue stays first-in-first-out whatever you choose.
+- **Pause** stops a download and keeps the part file, so **Resume** carries on
+  where it left off instead of starting over. **Pause all** / **Resume all**
+  hold and release the whole queue.
+- **Tick boxes** on the left pick several rows; **Cancel selected** and
+  **Remove selected** then act on all of them at once.
 - **Closing the window keeps everything running** — it minimises to the taskbar.
   Reopen it from the **Open queue window** button, or by running
   `%LOCALAPPDATA%\ytgrab\ytgrab-host.exe --ui`.
@@ -220,6 +230,7 @@ pixels that come out.
 | setting | default | what it does |
 | --- | --- | --- |
 | `concurrent_fragments` | `8` | download DASH fragments in parallel (`-N`); the biggest win on segmented sites like YouTube |
+| `max_concurrent` | `2` | how many *whole* videos download at once (1–8). Also set live by the queue window's **Downloading _n_ at once** picker |
 | `use_aria2c` | `auto` | if [aria2c](https://aria2.github.io/) is on PATH, use 16 connections per file |
 | `http_chunk_size` | `""` | split HTTP ranges to beat throttling (e.g. `10M`); off by default |
 | `hwaccel` | `true` | decode with the GPU; falls back to CPU automatically if the codec isn't supported |

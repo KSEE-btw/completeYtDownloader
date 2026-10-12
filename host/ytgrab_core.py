@@ -27,7 +27,7 @@ import uuid
 # --------------------------------------------------------------------------- #
 
 APP = "ytgrab"
-VERSION = "0.3.10"
+VERSION = "0.3.11"
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", APP)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -66,6 +66,10 @@ DEFAULT_CONFIG = {
     "http_chunk_size": "",
     # auto | true | false  -- use aria2c when it is installed for multi-conn
     "use_aria2c": "auto",
+    # how many queue items download at the same time (1 = strictly one at a
+    # time, up to 8).  Fragments *within* one file are already parallel; this
+    # is about whole videos, so two or three is usually plenty.
+    "max_concurrent": 2,
     # x264 speed/size trade: preset does not change quality at a fixed CRF
     "x264_preset": "faster",
     "x264_crf": 18,

@@ -9,6 +9,7 @@
   "extra_ytdlp_args": [],
 
   "concurrent_fragments": 8,
+  "max_concurrent": 2,
   "http_chunk_size": "",
   "use_aria2c": "auto",
   "x264_preset": "faster",

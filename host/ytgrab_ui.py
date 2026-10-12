@@ -35,6 +35,8 @@ import ytgrab_ipc as ipc
 QUEUE_PATH = os.environ.get("YTGRAB_QUEUE_PATH") or os.path.join(
     core.CONFIG_DIR, "queue.json")
 HISTORY_LIMIT = 200
+# the worker pool is always this big; max_concurrent gates how many may run
+MAX_PARALLEL = 8
 
 try:
     import tkinter as tk
@@ -64,8 +66,8 @@ BREEZE_DARK = {
     "ok": "#27ae60", "warn": "#f67400", "bad": "#da4453",
     "trough": "#1b1e20",
 }
-_STRIPES = {"queued": "#9aa0a6", "running": "#3daee9", "done": "#27ae60",
-            "error": "#da4453", "cancelled": "#b8bec3"}
+_STRIPES = {"queued": "#9aa0a6", "running": "#3daee9", "paused": "#f67400",
+            "done": "#27ae60", "error": "#da4453", "cancelled": "#b8bec3"}
 for _pal in (BREEZE_LIGHT, BREEZE_DARK):
     _pal["stripe"] = dict(_STRIPES)
 THEMES = {"light": BREEZE_LIGHT, "dark": BREEZE_DARK}
@@ -190,6 +192,8 @@ def detail_text(item) -> str:
         return "Failed: " + (item["error"] or "unknown error")
     if status == "cancelled":
         return "Cancelled"
+    if status == "paused":
+        return "Paused \u2014 press Resume to carry on"
     return status
 
 
@@ -203,7 +207,7 @@ class Item:
         self.spec = dict(spec or {})
         self.url = self.spec.get("url", "") or ""
         self.title = self.spec.get("title", "") or ""
-        self.status = "queued"          # queued running done error cancelled
+        self.status = "queued"      # queued running paused done error cancelled
         self.stage = ""
         self.stage_label = ""
         self.percent = 0.0
@@ -252,19 +256,35 @@ class Item:
 
 
 class QueueManager:
-    """Owns the items and a single worker thread that drains the queue."""
+    """Owns the items and a pool of workers that drains the queue.
+
+    The pool always holds MAX_PARALLEL idle threads; how many may run at once
+    is the ``max_concurrent`` setting, and it can change while the queue is
+    live.  Order matters: a worker always claims the earliest queued item, so
+    the queue stays first-in-first-out however many run in parallel.
+    """
 
     def __init__(self, path: str = QUEUE_PATH):
         self.path = path
         self._lock = threading.RLock()
         self._cond = threading.Condition(self._lock)
+        self._save_lock = threading.Lock()   # one writer at a time
         self.items: dict = {}          # id -> Item, in queue order
         self._jobs: dict = {}
         self._stop = False
+        try:
+            start = int(core.load_config().get("max_concurrent") or 2)
+        except (TypeError, ValueError):
+            start = 2
+        self._max_concurrent = max(1, min(MAX_PARALLEL, start))
         self.load()
-        self._worker = threading.Thread(target=self._loop, name="ytgrab-queue",
-                                        daemon=True)
-        self._worker.start()
+        self._workers = [
+            threading.Thread(target=self._loop, name=f"ytgrab-q{i}",
+                             daemon=True)
+            for i in range(MAX_PARALLEL)
+        ]
+        for worker in self._workers:
+            worker.start()
 
     # --- persistence ---
 
@@ -286,14 +306,17 @@ class QueueManager:
             self._prune()
             payload = {"version": 1,
                        "items": [it.to_dict() for it in self.items.values()]}
-        try:
-            os.makedirs(os.path.dirname(self.path), exist_ok=True)
-            tmp = self.path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump(payload, fh, ensure_ascii=False, indent=1)
-            os.replace(tmp, self.path)
-        except OSError:
-            pass
+        # with several workers running, more than one can finish at the same
+        # instant -- keep the write to the shared .tmp file single-file
+        with self._save_lock:
+            try:
+                os.makedirs(os.path.dirname(self.path), exist_ok=True)
+                tmp = self.path + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    json.dump(payload, fh, ensure_ascii=False, indent=1)
+                os.replace(tmp, self.path)
+            except OSError:
+                pass
 
     def _prune(self) -> None:
         if len(self.items) <= HISTORY_LIMIT:
@@ -356,6 +379,118 @@ class QueueManager:
         self.save()
         return True
 
+    def pause(self, item_id: str) -> bool:
+        """Hold an item: a running download stops mid-file so a resume can pick
+        up the part file, a waiting one simply stays where it is."""
+        with self._lock:
+            item = self.items.get(item_id)
+            if item is None or item.status not in ("queued", "running"):
+                return False
+            item.status = "paused"
+            item.stage = ""
+            item.stage_label = "Paused"
+            item.speed = item.eta = 0.0
+            job = self._jobs.get(item_id)
+        self.save()
+        if job is not None:
+            job.cancel()
+        return True
+
+    def resume(self, item_id: str) -> bool:
+        with self._lock:
+            item = self.items.get(item_id)
+            if item is None or item.status != "paused":
+                return False
+            item.status = "queued"
+            item.stage_label = ""
+            item.error = ""
+            item.finished = None
+            self._cond.notify_all()
+        self.save()
+        return True
+
+    def pause_all(self) -> int:
+        """Hold the whole queue: running items stop, waiting ones keep place."""
+        with self._lock:
+            jobs = []
+            n = 0
+            for item in self.items.values():
+                if item.status == "running":
+                    item.status = "paused"
+                    item.stage = ""
+                    item.stage_label = "Paused"
+                    item.speed = item.eta = 0.0
+                    n += 1
+                    job = self._jobs.get(item.id)
+                    if job is not None:
+                        jobs.append(job)
+                elif item.status == "queued":
+                    item.status = "paused"
+                    item.stage_label = "Paused"
+                    n += 1
+        if n:
+            self.save()
+        for job in jobs:
+            job.cancel()
+        return n
+
+    def resume_all(self) -> int:
+        with self._lock:
+            n = 0
+            for item in self.items.values():
+                if item.status == "paused":
+                    item.status = "queued"
+                    item.stage_label = ""
+                    item.error = ""
+                    item.finished = None
+                    n += 1
+            if n:
+                self._cond.notify_all()
+        if n:
+            self.save()
+        return n
+
+    def move(self, item_id: str, delta: int) -> bool:
+        """Nudge an item one slot up (-1) or down (+1) the queue."""
+        with self._lock:
+            ids = list(self.items)
+            if item_id not in ids:
+                return False
+            pos = ids.index(item_id)
+            target = pos + (1 if delta > 0 else -1)
+            if target < 0 or target >= len(ids):
+                return False
+            ids[pos], ids[target] = ids[target], ids[pos]
+            self.items = {i: self.items[i] for i in ids}
+        self.save()
+        return True
+
+    def cancel_many(self, item_ids) -> int:
+        return sum(1 for i in list(item_ids or []) if self.cancel(i))
+
+    def remove_many(self, item_ids) -> int:
+        return sum(1 for i in list(item_ids or []) if self.remove(i))
+
+    def max_concurrent(self) -> int:
+        with self._lock:
+            return self._max_concurrent
+
+    def set_max_concurrent(self, value) -> int:
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            n = 2
+        with self._lock:
+            self._max_concurrent = max(1, min(MAX_PARALLEL, n))
+            self._cond.notify_all()
+            result = self._max_concurrent
+        self.save()
+        try:                    # remember the choice for the next window
+            core.save_config({"max_concurrent": result})
+        except Exception as exc:  # noqa: BLE001
+            core.log("could not save max_concurrent:", exc)
+        return result
+
     def clear_finished(self) -> int:
         with self._lock:
             done = [i for i, it in self.items.items()
@@ -386,7 +521,8 @@ class QueueManager:
         for job in jobs:
             job.cancel()
         self.save()
-        self._worker.join(timeout=3.0)
+        for worker in self._workers:
+            worker.join(timeout=3.0)
 
     # --- reads ---
 
@@ -396,8 +532,8 @@ class QueueManager:
 
     def counts(self) -> dict:
         with self._lock:
-            c = {"queued": 0, "running": 0, "done": 0, "error": 0,
-                 "cancelled": 0}
+            c = {"queued": 0, "running": 0, "paused": 0, "done": 0,
+                 "error": 0, "cancelled": 0}
             for item in self.items.values():
                 c[item.status] = c.get(item.status, 0) + 1
             c["total"] = len(self.items)
@@ -411,9 +547,19 @@ class QueueManager:
                 return item
         return None
 
+    def _running_locked(self) -> int:
+        return sum(1 for it in self.items.values() if it.status == "running")
+
     def _loop(self) -> None:
         while True:
             with self._lock:
+                if self._stop:
+                    return
+                # wait while the allowed number of downloads are busy, so the
+                # item at the front of the queue is still the next to start
+                while (not self._stop
+                       and self._running_locked() >= self._max_concurrent):
+                    self._cond.wait(timeout=0.5)
                 if self._stop:
                     return
                 item = self._next_queued()
@@ -426,8 +572,12 @@ class QueueManager:
                 item.percent = 0.0
                 job = core.Job(item.id)
                 self._jobs[item.id] = job
+                self._cond.notify_all()
             self.save()
             self._run(item, job)
+            self.save()
+            with self._lock:
+                self._cond.notify_all()
 
     def _run(self, item: "Item", job: core.Job) -> None:
         def emit(event: dict) -> None:
@@ -506,6 +656,29 @@ def make_handler(qm: QueueManager, on_ui_command):
             return {"ok": qm.retry(req.get("job") or "")}
         if cmd == "remove":
             return {"ok": qm.remove(req.get("job") or "")}
+        if cmd == "pause":
+            return {"ok": qm.pause(req.get("job") or "")}
+        if cmd == "resume":
+            return {"ok": qm.resume(req.get("job") or "")}
+        if cmd == "pause_all":
+            return {"ok": True, "paused": qm.pause_all()}
+        if cmd == "resume_all":
+            return {"ok": True, "resumed": qm.resume_all()}
+        if cmd == "move":
+            try:
+                delta = int(req.get("delta") or 0)
+            except (TypeError, ValueError):
+                delta = 0
+            return {"ok": qm.move(req.get("job") or "", delta)}
+        if cmd == "cancel_many":
+            return {"ok": True,
+                    "cancelled": qm.cancel_many(req.get("jobs") or [])}
+        if cmd == "remove_many":
+            return {"ok": True,
+                    "removed": qm.remove_many(req.get("jobs") or [])}
+        if cmd == "set_max_concurrent":
+            return {"ok": True,
+                    "max_concurrent": qm.set_max_concurrent(req.get("value"))}
         if cmd == "clear_finished":
             return {"ok": True, "cleared": qm.clear_finished()}
         if cmd == "list":
@@ -514,7 +687,8 @@ def make_handler(qm: QueueManager, on_ui_command):
             counts = qm.counts()
             return {"ok": True, "counts": counts,
                     "queued": counts.get("queued", 0),
-                    "running": counts.get("running", 0)}
+                    "running": counts.get("running", 0),
+                    "paused": counts.get("paused", 0)}
         if cmd == "show":
             on_ui_command("show")
             return {"ok": True}
@@ -540,13 +714,15 @@ if TK_OK:
             super().__init__()
             self.qm = qm
             self.rows: dict = {}
+            self.selected: set = set()
+            self._picked = 0               # how many rows are ticked
             self._commands = _queue.Queue()
             self._closing = False
             self._tick_after = None
 
             self.title("ytgrab \u2014 download queue")
-            self.geometry("820x560")
-            self.minsize(620, 380)
+            self.geometry("820x600")
+            self.minsize(720, 400)
             # light/dark, from config if the user chose one, else the OS
             self.mode = config_theme()
             self.p = THEMES[self.mode]
@@ -607,6 +783,43 @@ if TK_OK:
             style.map("Yt.Vertical.TScrollbar",
                       background=[("active", p["muted"]),
                                   ("pressed", p["accent"])])
+            # compact buttons for the per-row queue moves
+            style.configure("Yt.Mini.TButton", background=p["card"],
+                            foreground=p["fg"], borderwidth=1, relief="solid",
+                            focusthickness=0, padding=(7, 3),
+                            bordercolor=p["border"], lightcolor=p["card"],
+                            darkcolor=p["card"])
+            style.map("Yt.Mini.TButton",
+                      background=[("pressed", p["accent"]),
+                                  ("active", p["card_hi"]),
+                                  ("disabled", p["bg"])],
+                      foreground=[("pressed", p["press_fg"]),
+                                  ("disabled", p["muted"])],
+                      bordercolor=[("active", p["accent"]),
+                                   ("pressed", p["accent_dk"]),
+                                   ("disabled", p["border"])],
+                      lightcolor=[("active", p["card_hi"]),
+                                  ("pressed", p["accent"])],
+                      darkcolor=[("active", p["card_hi"]),
+                                 ("pressed", p["accent_dk"])])
+            # the "at once" picker
+            self.option_add("*TCombobox*Listbox.background", p["card"])
+            self.option_add("*TCombobox*Listbox.foreground", p["fg"])
+            self.option_add("*TCombobox*Listbox.selectBackground", p["accent"])
+            self.option_add("*TCombobox*Listbox.selectForeground", p["press_fg"])
+            style.configure("Yt.TCombobox", fieldbackground=p["card"],
+                            background=p["card"], foreground=p["fg"],
+                            bordercolor=p["border"], arrowcolor=p["fg"],
+                            lightcolor=p["card"], darkcolor=p["card"],
+                            selectbackground=p["card"],
+                            selectforeground=p["fg"], padding=(4, 3))
+            style.map("Yt.TCombobox",
+                      fieldbackground=[("readonly", p["card"]),
+                                       ("disabled", p["bg"])],
+                      foreground=[("readonly", p["fg"]),
+                                  ("disabled", p["muted"])],
+                      bordercolor=[("focus", p["accent"])],
+                      arrowcolor=[("disabled", p["muted"])])
 
         # --- layout ---
 
@@ -634,6 +847,35 @@ if TK_OK:
                 header, text=self._theme_button_text(), style="Yt.TButton",
                 command=self._toggle_theme)
             self.themeBtn.pack(side="right", padx=(6, 0))
+            tk.Frame(self, bg=p["border"], height=1).pack(fill="x")
+
+            # --- queue controls (parallel slots, pause, selection) ---
+            bar = tk.Frame(self, bg=p["bg"], padx=14, pady=6)
+            bar.pack(fill="x")
+            tk.Label(bar, text="Downloading", bg=p["bg"], fg=p["muted"],
+                     font=(self.font, 9)).pack(side="left")
+            self.slots = ttk.Combobox(
+                bar, style="Yt.TCombobox", width=2, state="readonly",
+                values=[str(n) for n in range(1, MAX_PARALLEL + 1)])
+            self.slots.set(str(self.qm.max_concurrent()))
+            self.slots.pack(side="left", padx=(6, 4))
+            tk.Label(bar, text="at once", bg=p["bg"], fg=p["muted"],
+                     font=(self.font, 9)).pack(side="left", padx=(0, 14))
+            self.slots.bind("<<ComboboxSelected>>", self._on_slots)
+
+            self.pauseBtn = ttk.Button(bar, text="Pause all",
+                                       style="Yt.TButton",
+                                       command=self._toggle_pause_all)
+            self.pauseBtn.pack(side="left")
+
+            self.selRemove = ttk.Button(bar, text="Remove selected",
+                                        style="Yt.TButton",
+                                        command=self._remove_selected)
+            self.selRemove.pack(side="right", padx=(6, 0))
+            self.selCancel = ttk.Button(bar, text="Cancel selected",
+                                        style="Yt.TButton",
+                                        command=self._cancel_selected)
+            self.selCancel.pack(side="right", padx=(6, 0))
             tk.Frame(self, bg=p["border"], height=1).pack(fill="x")
 
             # --- where downloads go ---
@@ -725,7 +967,8 @@ if TK_OK:
         # --- row widgets ---
 
         def _create_row(self, item: dict) -> dict:
-            # a Breeze card: hairline border, coloured status stripe
+            # a Breeze card: hairline border, coloured status stripe, and a
+            # tick box on the left for picking several items at once
             p = self.p
             frame = tk.Frame(self.list, bg=p["card"],
                              highlightbackground=p["border"],
@@ -737,6 +980,9 @@ if TK_OK:
             body.pack(side="left", fill="both", expand=True)
             top = tk.Frame(body, bg=p["card"])
             top.pack(fill="x")
+            check = tk.Label(top, bg=p["card"], fg=p["muted"], cursor="hand2",
+                             font=(self.font, 11))
+            check.pack(side="left", padx=(0, 8))
             title = tk.Label(top, bg=p["card"], fg=p["fg"], anchor="w",
                              font=(self.font, 10, "bold"))
             title.pack(side="left", fill="x", expand=True)
@@ -748,17 +994,26 @@ if TK_OK:
             bar = ttk.Progressbar(body, style="Yt.Horizontal.TProgressbar",
                                   maximum=100.0)
             bar.pack(fill="x")
+            for widget in (frame, body, top, check, title, detail):
+                widget.bind("<Button-1>",
+                            lambda _e, i=item["id"]: self._toggle_select(i))
             return {"frame": frame, "stripe": stripe, "body": body,
-                    "title": title, "detail": detail,
+                    "title": title, "detail": detail, "check": check,
                     "bar": bar, "btns": btns, "buttons": {}, "bar_mode": None,
-                    "stripe_mode": item["status"], "border_mode": p["border"]}
+                    "sel_mode": None, "stripe_mode": item["status"],
+                    "border_mode": p["border"]}
 
         def _set_buttons(self, row: dict, item: dict) -> None:
             status = item["status"]
             if status == "queued":
-                wanted = [("Cancel", "cancel"), ("Remove", "remove")]
+                wanted = [("Cancel", "cancel"), ("Remove", "remove"),
+                          ("Pause", "pause"), ("\u25bc", "down"),
+                          ("\u25b2", "up")]
             elif status == "running":
-                wanted = [("Cancel", "cancel")]
+                wanted = [("Pause", "pause"), ("Cancel", "cancel")]
+            elif status == "paused":
+                wanted = [("Resume", "resume"), ("Remove", "remove"),
+                          ("\u25bc", "down"), ("\u25b2", "up")]
             elif status == "done":
                 wanted = [("Show file", "reveal"), ("Remove", "remove")]
             else:
@@ -770,7 +1025,15 @@ if TK_OK:
                 widget.destroy()
             row["buttons"] = {}
             for name, action in wanted:
-                btn = ttk.Button(row["btns"], text=name, style="Yt.TButton",
+                # clam's default button width is a fixed 11 characters; the
+                # per-row buttons fit their label instead so a full row of
+                # them still leaves the title room to breathe
+                if action in ("up", "down"):
+                    style, width = "Yt.Mini.TButton", 2
+                else:
+                    style, width = "Yt.TButton", 0
+                btn = ttk.Button(row["btns"], text=name, style=style,
+                                 width=width,
                                  command=lambda i=item["id"], a=action:
                                  self._action(a, i))
                 btn.pack(side="right", padx=(6, 0))
@@ -783,8 +1046,17 @@ if TK_OK:
                 self.qm.retry(item_id)
             elif action == "remove":
                 self.qm.remove(item_id)
+                self.selected.discard(item_id)
             elif action == "reveal":
                 self._reveal_item(item_id)
+            elif action == "pause":
+                self.qm.pause(item_id)
+            elif action == "resume":
+                self.qm.resume(item_id)
+            elif action == "up":
+                self.qm.move(item_id, -1)
+            elif action == "down":
+                self.qm.move(item_id, +1)
             self._tick(force=True)
 
         def _update_row(self, row: dict, item: dict) -> None:
@@ -795,10 +1067,17 @@ if TK_OK:
             if row["stripe_mode"] != status:
                 row["stripe"].configure(bg=p["stripe"].get(status, p["muted"]))
                 row["stripe_mode"] = status
-            border = p["accent"] if status == "running" else p["border"]
+            selected = item["id"] in self.selected
+            border = (p["accent"] if (status == "running" or selected)
+                      else p["border"])
             if row["border_mode"] != border:
                 row["frame"].configure(highlightbackground=border)
                 row["border_mode"] = border
+            if row["sel_mode"] != selected:
+                row["check"].configure(
+                    text="\u2611" if selected else "\u2610",
+                    fg=p["accent"] if selected else p["muted"])
+                row["sel_mode"] = selected
             text = item["title"] or item["url"]
             if len(text) > 110:
                 text = text[:107] + "..."
@@ -860,14 +1139,19 @@ if TK_OK:
                 self.empty.pack(pady=60)
 
             counts = self.qm.counts()
+            self._update_controls(counts)
             parts = []
             if counts["running"]:
                 parts.append(f"{counts['running']} downloading")
             if counts["queued"]:
                 parts.append(f"{counts['queued']} waiting")
+            if counts["paused"]:
+                parts.append(f"{counts['paused']} paused")
             done = counts["done"] + counts["error"] + counts["cancelled"]
             if done:
                 parts.append(f"{done} finished")
+            if self._picked:
+                parts.append(f"{self._picked} selected")
             self.summary.configure(text="   ".join(parts) or "idle")
             self.update_idletasks()
             self.canvas.configure(scrollregion=self.canvas.bbox("all"))
@@ -932,6 +1216,56 @@ if TK_OK:
 
         def _clear_finished(self) -> None:
             self.qm.clear_finished()
+            self._tick(force=True)
+
+        # --- queue controls ---
+
+        def _update_controls(self, counts: dict) -> None:
+            """Keep the toolbar in step with the queue."""
+            self.selected &= set(self.rows)   # forget rows that went away
+            picked = len(self.selected)
+            busy = counts.get("queued", 0) + counts.get("running", 0)
+            self.pauseBtn.configure(
+                text="Pause all" if busy or not counts.get("paused")
+                else "Resume all")
+            self.selCancel.configure(state="normal" if picked else "disabled")
+            self.selRemove.configure(state="normal" if picked else "disabled")
+            self._picked = picked      # the summary line spells this out
+
+        def _toggle_select(self, item_id: str) -> None:
+            if item_id in self.selected:
+                self.selected.discard(item_id)
+            else:
+                self.selected.add(item_id)
+            self._tick(force=True)
+
+        def _on_slots(self, _event=None) -> None:
+            n = self.qm.set_max_concurrent(self.slots.get())
+            self.slots.set(str(n))
+            self.footer.configure(
+                text=f"Downloading {n} at a time \u2014 saved to your config.")
+
+        def _toggle_pause_all(self) -> None:
+            counts = self.qm.counts()
+            if counts.get("queued") or counts.get("running"):
+                n = self.qm.pause_all()
+                self.footer.configure(
+                    text=f"Paused {n} item(s). Use Resume all to continue.")
+            else:
+                n = self.qm.resume_all()
+                self.footer.configure(text=f"Resumed {n} item(s).")
+            self._tick(force=True)
+
+        def _cancel_selected(self) -> None:
+            n = self.qm.cancel_many(sorted(self.selected))
+            self.selected.clear()
+            self.footer.configure(text=f"Cancelled {n} item(s).")
+            self._tick(force=True)
+
+        def _remove_selected(self) -> None:
+            n = self.qm.remove_many(sorted(self.selected))
+            self.selected.clear()
+            self.footer.configure(text=f"Removed {n} item(s).")
             self._tick(force=True)
 
         def _open_folder(self) -> None:
