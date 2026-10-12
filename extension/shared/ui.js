@@ -75,13 +75,35 @@
     transcode: { cls: "bad", short: "convert" },
   };
 
-  // A tiny audio marker shown only in front of *video* sources, so you can
-  // tell at a glance whether a video stream already carries audio.  A native
-  // <select> can only hold text, so the marker is a speaker glyph, not an image.
+  // A tiny marker in front of *video* sources that answers the only question
+  // that matters: will the file I get have sound?
+  //
+  // YouTube muxes audio into just the low "progressive" formats (normally 360p
+  // and sometimes 720p); every other resolution is a video-only DASH stream
+  // with the sound in a separate track.  That is why almost everything shows a
+  // mark -- ytgrab merges the best audio back in, so the download is never
+  // silent unless you switch ensure_audio off.  A native <select> can only hold
+  // text, hence a glyph rather than an image.
   const AUDIO_MARK = {
-    av: "\u{1F50A}",     // video that already has audio
-    video: "\u{1F507}",  // video only (no audio in this stream)
+    av: "\u{1F50A}",          // the stream already carries audio
+    mux: "\u{1F50A}+",        // no audio of its own; ytgrab muxes the best in
+    silent: "\u{1F507}",      // no audio, and auto-muxing is switched off
   };
+
+  function audioMark(kind, ensureAudio) {
+    if (kind === "av") return AUDIO_MARK.av;
+    if (kind === "video") return ensureAudio ? AUDIO_MARK.mux : AUDIO_MARK.silent;
+    return "";                // an audio-only entry obviously has audio
+  }
+
+  // config arrives as JSON: treat the usual false-y spellings as "off"
+  function configFlag(value, fallback) {
+    if (value === undefined || value === null || value === "") return fallback;
+    if (typeof value === "string") {
+      return !["false", "0", "no", "off", "none"].includes(value.toLowerCase());
+    }
+    return !!value;
+  }
 
   // ---- the widget -------------------------------------------------------- //
 
@@ -582,9 +604,12 @@
       ]);
       formatSel.appendChild(recommended);
 
+      const ensureAudio = configFlag(state.config.ensure_audio, true);
       const groups = [
         ["Video + audio", "av"],
-        ["Video only", "video"],
+        [ensureAudio
+          ? "Video only \u2014 ytgrab adds the best audio"
+          : "Video only", "video"],
         ["Audio only", "audio"],
       ];
       for (const [label, kind] of groups) {
@@ -596,14 +621,19 @@
         for (const f of items) {
           const badge = (COMPAT[f.compat] || COMPAT.transcode).short;
           const size = f.size ? `  \u00b7  ${fmtBytes(f.size)}` : "";
-          // speaker icon in front of video sources only (never audio-only)
-          const mark = AUDIO_MARK[f.kind];
+          // speaker in front of video sources only (never audio-only)
+          const mark = audioMark(f.kind, ensureAudio);
           const option = el("option", {
             value: `id:${f.id}`,
             text: `${mark ? mark + "  " : ""}${f.label}${size}  \u00b7  ${badge}`,
-            title: f.kind === "video"
-              ? `${f.vcodec_raw || ""} \u2014 no audio; ytgrab muxes the best audio`
-              : `${f.vcodec_raw || ""} + ${f.acodec_raw || ""}`,
+            title: f.kind === "av"
+              ? `${f.vcodec_raw || ""} + ${f.acodec_raw || ""}`
+              : f.kind === "video"
+                ? (ensureAudio
+                    ? `${f.vcodec_raw || ""} \u2014 video-only stream; ytgrab ` +
+                      "muxes the best audio in"
+                    : `${f.vcodec_raw || ""} \u2014 video-only stream; no audio`)
+                : `${f.acodec_raw || ""}`,
           });
           option.dataset.compat = f.compat;
           group.appendChild(option);
