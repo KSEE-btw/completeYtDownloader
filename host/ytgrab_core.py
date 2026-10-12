@@ -27,7 +27,7 @@ import uuid
 # --------------------------------------------------------------------------- #
 
 APP = "ytgrab"
-VERSION = "0.3.8"
+VERSION = "0.3.9"
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", APP)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -53,6 +53,11 @@ DEFAULT_CONFIG = {
     "force_no_playlist": True,
     # extra raw yt-dlp args
     "extra_ytdlp_args": [],
+
+    # ---- queue window look ----
+    # auto | light | dark.  "auto" follows the Windows app theme; the toggle in
+    # the queue window writes "light"/"dark" here so the choice sticks.
+    "ui_theme": "auto",
 
     # ---- speed (all quality-neutral by default) ----
     # parallel DASH fragment downloads; the single biggest download speedup

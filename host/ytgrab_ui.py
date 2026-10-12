@@ -45,24 +45,69 @@ except Exception:            # pragma: no cover - no display / no Tk
     tk = ttk = messagebox = None
     TK_OK = False
 
-# Breeze -- KDE Plasma's default look: soft light-grey surfaces, a white view,
-# flat 1px hairlines and the signature #3daee9 accent blue.
-BG = "#eff0f1"          # window background
-CARD = "#ffffff"        # list card / view background
-CARD_HI = "#f7f8f9"     # hover tint
-HEADER = "#fcfcfc"      # toolbar strip
-BORDER = "#c9ced3"      # hairline borders
-FG = "#232629"          # primary text
-MUTED = "#6f7a80"       # secondary text
-ACCENT = "#3daee9"      # Breeze highlight blue
-ACCENT_DK = "#2980b9"
-OK = "#27ae60"
-WARN = "#f67400"
-BAD = "#da4453"
-TROUGH = "#e3e5e6"
-# left stripe colour on each card, keyed by status
-STRIPE = {"queued": "#9aa0a6", "running": ACCENT, "done": OK,
-          "error": BAD, "cancelled": "#b8bec3"}
+# Breeze -- KDE Plasma's default look.  Two variants: the queue window picks one
+# at start-up (an explicit ui_theme from config, else the Windows app theme) and
+# the toggle in its toolbar flips between them live.
+BREEZE_LIGHT = {
+    "bg": "#eff0f1", "card": "#ffffff", "card_hi": "#f7f8f9",
+    "header": "#fcfcfc", "border": "#c9ced3",
+    "fg": "#232629", "muted": "#6f7a80",
+    "accent": "#3daee9", "accent_dk": "#2980b9", "press_fg": "#ffffff",
+    "ok": "#27ae60", "warn": "#f67400", "bad": "#da4453",
+    "trough": "#e3e5e6",
+}
+BREEZE_DARK = {
+    "bg": "#31363b", "card": "#232629", "card_hi": "#2c3136",
+    "header": "#2a2e32", "border": "#1b1e20",
+    "fg": "#eff0f1", "muted": "#9aa0a6",
+    "accent": "#3daee9", "accent_dk": "#2980b9", "press_fg": "#ffffff",
+    "ok": "#27ae60", "warn": "#f67400", "bad": "#da4453",
+    "trough": "#1b1e20",
+}
+_STRIPES = {"queued": "#9aa0a6", "running": "#3daee9", "done": "#27ae60",
+            "error": "#da4453", "cancelled": "#b8bec3"}
+for _pal in (BREEZE_LIGHT, BREEZE_DARK):
+    _pal["stripe"] = dict(_STRIPES)
+THEMES = {"light": BREEZE_LIGHT, "dark": BREEZE_DARK}
+
+# back-compat aliases: the light variant, used by tests and diagnostics
+BG = BREEZE_LIGHT["bg"]
+CARD = BREEZE_LIGHT["card"]
+CARD_HI = BREEZE_LIGHT["card_hi"]
+HEADER = BREEZE_LIGHT["header"]
+BORDER = BREEZE_LIGHT["border"]
+FG = BREEZE_LIGHT["fg"]
+MUTED = BREEZE_LIGHT["muted"]
+ACCENT = BREEZE_LIGHT["accent"]
+ACCENT_DK = BREEZE_LIGHT["accent_dk"]
+OK = BREEZE_LIGHT["ok"]
+WARN = BREEZE_LIGHT["warn"]
+BAD = BREEZE_LIGHT["bad"]
+TROUGH = BREEZE_LIGHT["trough"]
+STRIPE = BREEZE_LIGHT["stripe"]
+
+
+def windows_app_theme() -> str:
+    """Windows' own light/dark choice, so the queue matches the desktop."""
+    try:
+        import winreg
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+        ) as key:
+            light, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        return "light" if light else "dark"
+    except Exception:
+        return "light"
+
+
+def config_theme() -> str:
+    """ui_theme from config; "auto" follows the Windows app theme."""
+    try:
+        want = str(core.load_config().get("ui_theme") or "auto").lower()
+    except Exception:
+        want = "auto"
+    return want if want in THEMES else windows_app_theme()
 
 
 def pick_ui_font(root) -> str:
@@ -497,70 +542,86 @@ if TK_OK:
             self.rows: dict = {}
             self._commands = _queue.Queue()
             self._closing = False
+            self._tick_after = None
 
             self.title("ytgrab \u2014 download queue")
             self.geometry("820x560")
             self.minsize(620, 380)
-            self.configure(bg=BG)
-            self._init_style()
+            # light/dark, from config if the user chose one, else the OS
+            self.mode = config_theme()
+            self.p = THEMES[self.mode]
+            self.configure(bg=self.p["bg"])
             self.font = pick_ui_font(self)
+            self._init_style()
 
             self._build()
+            self.bind_all("<MouseWheel>", self._on_wheel)
             self.protocol("WM_DELETE_WINDOW", self._on_close)
             self.bind("<Control-q>", lambda _e: self._quit())
             if not show:
                 self.iconify()
-            self.after(250, self._tick)
+            self._tick_after = self.after(250, self._tick)
 
         # --- styling ---
 
         def _init_style(self) -> None:
+            p = self.p
             style = ttk.Style(self)
             try:
                 style.theme_use("clam")
             except tk.TclError:
                 pass
-            # flat Breeze buttons: light fill, hairline border, blue on press
-            style.configure("Yt.TButton", background=CARD, foreground=FG,
+            # flat Breeze buttons: surface fill, hairline border, blue on press
+            style.configure("Yt.TButton", background=p["card"], foreground=p["fg"],
                             borderwidth=1, relief="solid", focusthickness=0,
-                            padding=(12, 5), bordercolor=BORDER,
-                            lightcolor=CARD, darkcolor=CARD)
+                            padding=(12, 5), bordercolor=p["border"],
+                            lightcolor=p["card"], darkcolor=p["card"])
             style.map("Yt.TButton",
-                      background=[("pressed", ACCENT), ("active", CARD_HI),
-                                  ("disabled", BG)],
-                      foreground=[("pressed", "#ffffff"), ("disabled", MUTED)],
-                      bordercolor=[("active", ACCENT), ("pressed", ACCENT_DK),
-                                   ("disabled", BORDER)],
-                      lightcolor=[("active", CARD_HI), ("pressed", ACCENT)],
-                      darkcolor=[("active", CARD_HI), ("pressed", ACCENT_DK)])
-            style.configure("Yt.Horizontal.TProgressbar", troughcolor=TROUGH,
-                            background=ACCENT, bordercolor=TROUGH,
-                            lightcolor=ACCENT, darkcolor=ACCENT, thickness=8)
-            style.configure("Yt.Ok.Horizontal.TProgressbar", troughcolor=TROUGH,
-                            background=OK, bordercolor=TROUGH,
-                            lightcolor=OK, darkcolor=OK, thickness=8)
-            style.configure("Yt.Bad.Horizontal.TProgressbar", troughcolor=TROUGH,
-                            background=BAD, bordercolor=TROUGH,
-                            lightcolor=BAD, darkcolor=BAD, thickness=8)
-            style.configure("Yt.Vertical.TScrollbar", background=BORDER,
-                            troughcolor=BG, bordercolor=BG, arrowcolor=MUTED,
-                            lightcolor=BG, darkcolor=BG, gripcount=0)
+                      background=[("pressed", p["accent"]),
+                                  ("active", p["card_hi"]),
+                                  ("disabled", p["bg"])],
+                      foreground=[("pressed", p["press_fg"]),
+                                  ("disabled", p["muted"])],
+                      bordercolor=[("active", p["accent"]),
+                                   ("pressed", p["accent_dk"]),
+                                   ("disabled", p["border"])],
+                      lightcolor=[("active", p["card_hi"]),
+                                  ("pressed", p["accent"])],
+                      darkcolor=[("active", p["card_hi"]),
+                                 ("pressed", p["accent_dk"])])
+            style.configure("Yt.Horizontal.TProgressbar", troughcolor=p["trough"],
+                            background=p["accent"], bordercolor=p["trough"],
+                            lightcolor=p["accent"], darkcolor=p["accent"],
+                            thickness=8)
+            style.configure("Yt.Ok.Horizontal.TProgressbar", troughcolor=p["trough"],
+                            background=p["ok"], bordercolor=p["trough"],
+                            lightcolor=p["ok"], darkcolor=p["ok"], thickness=8)
+            style.configure("Yt.Bad.Horizontal.TProgressbar",
+                            troughcolor=p["trough"], background=p["bad"],
+                            bordercolor=p["trough"], lightcolor=p["bad"],
+                            darkcolor=p["bad"], thickness=8)
+            style.configure("Yt.Vertical.TScrollbar", background=p["border"],
+                            troughcolor=p["bg"], bordercolor=p["bg"],
+                            arrowcolor=p["muted"], lightcolor=p["bg"],
+                            darkcolor=p["bg"], gripcount=0)
             style.map("Yt.Vertical.TScrollbar",
-                      background=[("active", "#9ea7ab"), ("pressed", ACCENT)])
+                      background=[("active", p["muted"]),
+                                  ("pressed", p["accent"])])
 
         # --- layout ---
 
         def _build(self) -> None:
+            p = self.p
             # --- top toolbar (Breeze-style) ---
-            header = tk.Frame(self, bg=HEADER, padx=14, pady=9)
+            header = tk.Frame(self, bg=p["header"], padx=14, pady=9)
             header.pack(fill="x")
-            tk.Label(header, text="\u25b6", bg=HEADER, fg=ACCENT,
+            tk.Label(header, text="\u25b6", bg=p["header"], fg=p["accent"],
                      font=(self.font, 12, "bold")).pack(side="left",
                                                         padx=(0, 8))
-            tk.Label(header, text="ytgrab queue", bg=HEADER, fg=FG,
+            tk.Label(header, text="ytgrab queue", bg=p["header"], fg=p["fg"],
                      font=(self.font, 12, "bold")).pack(side="left")
-            self.summary = tk.Label(header, text="", bg=HEADER, fg=MUTED,
-                                    font=(self.font, 9))
+            self.summary = tk.Label(header, text="", bg=p["header"],
+                                    fg=p["muted"], font=(self.font, 9))
             self.summary.pack(side="left", padx=(12, 0))
 
             for label, cmd in (("Quit", self._quit), ("Hide", self._on_close),
@@ -568,22 +629,27 @@ if TK_OK:
                                ("Open folder", self._open_folder)):
                 ttk.Button(header, text=label, style="Yt.TButton",
                            command=cmd).pack(side="right", padx=(6, 0))
-            tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
+            # the toggle is labelled with the mode you would switch *to*
+            self.themeBtn = ttk.Button(
+                header, text=self._theme_button_text(), style="Yt.TButton",
+                command=self._toggle_theme)
+            self.themeBtn.pack(side="right", padx=(6, 0))
+            tk.Frame(self, bg=p["border"], height=1).pack(fill="x")
 
             # --- where downloads go ---
-            save = tk.Frame(self, bg=BG, padx=14, pady=7)
+            save = tk.Frame(self, bg=p["bg"], padx=14, pady=7)
             save.pack(fill="x")
-            tk.Label(save, text="Save to", bg=BG, fg=MUTED,
+            tk.Label(save, text="Save to", bg=p["bg"], fg=p["muted"],
                      font=(self.font, 9)).pack(side="left")
-            self.savedir = tk.Label(save, text="", bg=BG, fg=FG, anchor="w",
-                                    font=(self.font, 9))
+            self.savedir = tk.Label(save, text="", bg=p["bg"], fg=p["fg"],
+                                    anchor="w", font=(self.font, 9))
             self.savedir.pack(side="left", fill="x", expand=True, padx=(10, 10))
             ttk.Button(save, text="Change\u2026", style="Yt.TButton",
                        command=self._choose_folder).pack(side="right")
             self._refresh_savedir()
 
-            # --- scrolling list of white cards ---
-            self.canvas = tk.Canvas(self, bg=BG, highlightthickness=0, bd=0)
+            # --- scrolling list of cards ---
+            self.canvas = tk.Canvas(self, bg=p["bg"], highlightthickness=0, bd=0)
             scroll = ttk.Scrollbar(self, orient="vertical",
                                    style="Yt.Vertical.TScrollbar",
                                    command=self.canvas.yview)
@@ -591,7 +657,7 @@ if TK_OK:
             scroll.pack(side="right", fill="y")
             self.canvas.pack(side="left", fill="both", expand=True)
 
-            self.list = tk.Frame(self.canvas, bg=BG, pady=6)
+            self.list = tk.Frame(self.canvas, bg=p["bg"], pady=6)
             self.canvas.create_window((0, 0), window=self.list, anchor="nw",
                                       tags="inner")
             self.list.bind(
@@ -601,22 +667,49 @@ if TK_OK:
             self.canvas.bind(
                 "<Configure>",
                 lambda e: self.canvas.itemconfigure("inner", width=e.width))
-            self.canvas.bind_all("<MouseWheel>", self._on_wheel)
 
             self.empty = tk.Label(
-                self.list, bg=BG, fg=MUTED, justify="center",
+                self.list, bg=p["bg"], fg=p["muted"], justify="center",
                 font=(self.font, 10),
                 text=("No downloads yet.\n\n"
                       "Click the blue ytgrab arrow on a page to add one."))
 
             # --- footer ---
             self.footer = tk.Label(
-                self, bg=HEADER, fg=MUTED, anchor="w", padx=14, pady=6,
-                font=(self.font, 8),
+                self, bg=p["header"], fg=p["muted"], anchor="w", padx=14,
+                pady=6, font=(self.font, 8),
                 text="Closing this window keeps downloads running in the "
                      "background. Use Quit to stop ytgrab.")
             self.footer.pack(fill="x", side="bottom")
-            tk.Frame(self, bg=BORDER, height=1).pack(fill="x", side="bottom")
+            tk.Frame(self, bg=p["border"], height=1).pack(fill="x",
+                                                          side="bottom")
+
+        # --- light / dark toggle ---
+
+        def _theme_button_text(self) -> str:
+            return "\u263e Dark" if self.mode == "light" else "\u2600 Light"
+
+        def _toggle_theme(self) -> None:
+            mode = "dark" if self.mode == "light" else "light"
+            try:
+                core.save_config({"ui_theme": mode})
+            except Exception as exc:  # noqa: BLE001
+                core.log("could not save ui_theme:", exc)
+            self._apply_theme(mode)
+            self.footer.configure(
+                text=f"Queue window: {mode} mode \u2014 saved to your config.")
+
+        def _apply_theme(self, mode: str) -> None:
+            """Swap palettes and rebuild the chrome and rows in place."""
+            self.mode = mode if mode in THEMES else "light"
+            self.p = THEMES[self.mode]
+            self.configure(bg=self.p["bg"])
+            self._init_style()
+            for child in list(self.winfo_children()):
+                child.destroy()
+            self.rows.clear()
+            self._build()
+            self._tick(force=True)
 
         def _on_wheel(self, event) -> None:
             try:
@@ -632,22 +725,24 @@ if TK_OK:
         # --- row widgets ---
 
         def _create_row(self, item: dict) -> dict:
-            # a white Breeze card: hairline border, coloured status stripe
-            frame = tk.Frame(self.list, bg=CARD,
-                             highlightbackground=BORDER, highlightthickness=1)
+            # a Breeze card: hairline border, coloured status stripe
+            p = self.p
+            frame = tk.Frame(self.list, bg=p["card"],
+                             highlightbackground=p["border"],
+                             highlightthickness=1)
             stripe = tk.Frame(frame, width=4,
-                              bg=STRIPE.get(item["status"], MUTED))
+                              bg=p["stripe"].get(item["status"], p["muted"]))
             stripe.pack(side="left", fill="y")
-            body = tk.Frame(frame, bg=CARD, padx=13, pady=9)
+            body = tk.Frame(frame, bg=p["card"], padx=13, pady=9)
             body.pack(side="left", fill="both", expand=True)
-            top = tk.Frame(body, bg=CARD)
+            top = tk.Frame(body, bg=p["card"])
             top.pack(fill="x")
-            title = tk.Label(top, bg=CARD, fg=FG, anchor="w",
+            title = tk.Label(top, bg=p["card"], fg=p["fg"], anchor="w",
                              font=(self.font, 10, "bold"))
             title.pack(side="left", fill="x", expand=True)
-            btns = tk.Frame(top, bg=CARD)
+            btns = tk.Frame(top, bg=p["card"])
             btns.pack(side="right")
-            detail = tk.Label(body, bg=CARD, fg=MUTED, anchor="w",
+            detail = tk.Label(body, bg=p["card"], fg=p["muted"], anchor="w",
                               font=(self.font, 9))
             detail.pack(fill="x", pady=(3, 7))
             bar = ttk.Progressbar(body, style="Yt.Horizontal.TProgressbar",
@@ -656,7 +751,7 @@ if TK_OK:
             return {"frame": frame, "stripe": stripe, "body": body,
                     "title": title, "detail": detail,
                     "bar": bar, "btns": btns, "buttons": {}, "bar_mode": None,
-                    "stripe_mode": item["status"], "border_mode": BORDER}
+                    "stripe_mode": item["status"], "border_mode": p["border"]}
 
         def _set_buttons(self, row: dict, item: dict) -> None:
             status = item["status"]
@@ -694,12 +789,13 @@ if TK_OK:
 
         def _update_row(self, row: dict, item: dict) -> None:
             status = item["status"]
+            p = self.p
             # left stripe carries the status colour; the border lights up blue
             # while the item is actually running
             if row["stripe_mode"] != status:
-                row["stripe"].configure(bg=STRIPE.get(status, MUTED))
+                row["stripe"].configure(bg=p["stripe"].get(status, p["muted"]))
                 row["stripe_mode"] = status
-            border = ACCENT if status == "running" else BORDER
+            border = p["accent"] if status == "running" else p["border"]
             if row["border_mode"] != border:
                 row["frame"].configure(highlightbackground=border)
                 row["border_mode"] = border
@@ -776,7 +872,7 @@ if TK_OK:
             self.update_idletasks()
             self.canvas.configure(scrollregion=self.canvas.bbox("all"))
             if not force:
-                self.after(400, self._tick)
+                self._tick_after = self.after(400, self._tick)
 
         def _drain_commands(self) -> None:
             while True:
@@ -801,6 +897,15 @@ if TK_OK:
                 text="Still running in the background. Reopen from the "
                      "ytgrab button, or use Quit to stop ytgrab.")
 
+        def _cancel_tick(self) -> None:
+            """Drop the pending refresh so it cannot fire after destroy()."""
+            if self._tick_after is not None:
+                try:
+                    self.after_cancel(self._tick_after)
+                except Exception:
+                    pass
+                self._tick_after = None
+
         def _quit(self) -> None:
             if self.qm.counts().get("running"):
                 if not messagebox.askyesno(
@@ -810,6 +915,7 @@ if TK_OK:
                         "the queue."):
                     return
             self._closing = True
+            self._cancel_tick()
             try:
                 self.destroy()
             except tk.TclError:
@@ -818,6 +924,7 @@ if TK_OK:
         def _force_quit(self) -> None:
             # like _quit but never asks: the updater is waiting on us
             self._closing = True
+            self._cancel_tick()
             try:
                 self.destroy()
             except tk.TclError:
@@ -947,7 +1054,7 @@ def _smoke() -> int:
     for _ in range(6):
         root.update()
         time.sleep(0.06)
-    root.destroy()
+    root._force_quit()
     qm.shutdown()
     print("SMOKE PASS")
     return 0
