@@ -37,8 +37,13 @@ NETWORK = [
 
 def run(suite: str) -> int:
     print(f"\n{'=' * 72}\n== {suite}\n{'=' * 72}", flush=True)
+    # The Tk suites print the queue's arrows (▲ ▼) and the theme toggle's moon
+    # (☾). A cp1252 console cannot encode those and the suite dies on a
+    # UnicodeEncodeError, so pin the child's stdio to UTF-8 rather than relying
+    # on whoever is running this to have set PYTHONIOENCODING.
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
     proc = subprocess.run([sys.executable, "-u", os.path.join(HERE, suite)],
-                          cwd=os.path.dirname(HERE))
+                          cwd=os.path.dirname(HERE), env=env)
     return proc.returncode
 
 
