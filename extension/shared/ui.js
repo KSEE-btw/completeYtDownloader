@@ -75,6 +75,14 @@
     transcode: { cls: "bad", short: "convert" },
   };
 
+  // A tiny audio marker shown only in front of *video* sources, so you can
+  // tell at a glance whether a video stream already carries audio.  A native
+  // <select> can only hold text, so the marker is a speaker glyph, not an image.
+  const AUDIO_MARK = {
+    av: "\u{1F50A}",     // video that already has audio
+    video: "\u{1F507}",  // video only (no audio in this stream)
+  };
+
   // ---- the widget -------------------------------------------------------- //
 
   function mount(root, options) {
@@ -588,10 +596,14 @@
         for (const f of items) {
           const badge = (COMPAT[f.compat] || COMPAT.transcode).short;
           const size = f.size ? `  \u00b7  ${fmtBytes(f.size)}` : "";
+          // speaker icon in front of video sources only (never audio-only)
+          const mark = AUDIO_MARK[f.kind];
           const option = el("option", {
             value: `id:${f.id}`,
-            text: `${f.label}${size}  \u00b7  ${badge}`,
-            title: `${f.vcodec_raw || ""} + ${f.acodec_raw || ""}`,
+            text: `${mark ? mark + "  " : ""}${f.label}${size}  \u00b7  ${badge}`,
+            title: f.kind === "video"
+              ? `${f.vcodec_raw || ""} \u2014 no audio; ytgrab muxes the best audio`
+              : `${f.vcodec_raw || ""} + ${f.acodec_raw || ""}`,
           });
           option.dataset.compat = f.compat;
           group.appendChild(option);
