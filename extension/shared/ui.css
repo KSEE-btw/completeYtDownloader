@@ -156,6 +156,32 @@
   gap: 10px;
 }
 
+.ytgrab .timerow {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.ytgrab .timerow input {
+  text-align: center;
+}
+
+.ytgrab .timerow .dash {
+  color: var(--muted);
+}
+
+.ytgrab .checkgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.ytgrab .checkgrid .checkline {
+  gap: 6px;
+  padding: 8px;
+}
+
 .ytgrab .checkline {
   display: flex;
   align-items: center;

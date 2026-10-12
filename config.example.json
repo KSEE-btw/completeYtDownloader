@@ -17,6 +17,11 @@
   "hwaccel": true,
   "video_encoder": "libx264",
 
+  "clip_start": "",
+  "clip_end": "",
+  "force_cfr": false,
+  "audio_48k": false,
+
   "ytdlp": "",
   "ffmpeg": "",
   "ffprobe": "",

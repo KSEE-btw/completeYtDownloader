@@ -47,7 +47,8 @@ MAX_MSG = 1024 * 1024 - 16
 
 # fields the queue window accepts for a new download
 ENQUEUE_FIELDS = ("url", "format", "mode", "convert", "target", "outdir",
-                  "keep_original", "title")
+                  "keep_original", "title",
+                  "clip_start", "clip_end", "force_cfr", "audio_48k")
 
 # Windows process creation flags for a detached, window-less child
 CREATE_DETACHED_PROCESS = 0x00000008

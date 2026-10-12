@@ -169,6 +169,28 @@ started survives closing the popup, and even closing Firefox.
 The queue lives in `~/.config/ytgrab/queue.json`. Deleting it just forgets the
 history — no downloads are harmed.
 
+### The editor pack
+
+Three extras for footage you are about to cut, in the popup's **Clip** row and
+the two boxes under it:
+
+- **Clip** — fill in a start, an end, or both (`1:30`, `0:01:30`, or plain
+  seconds) to download just that stretch. yt-dlp fetches only the fragments that
+  cover the range, so grabbing 40 seconds out of a two-hour stream does not pull
+  two hours, and a keyframe is forced at each cut so the in/out points land
+  where you asked. Leave both blank for the whole video.
+- **Constant FPS** — rebuilds the video at a constant frame rate when the source
+  is variable (phones and screen capture, mostly) — the fix for footage that
+  drifts a few frames out of sync by the end of a long clip. Sources that are
+  already constant are left alone.
+- **48 kHz audio** — re-encodes the audio at 48 kHz, the rate editing tools mix
+  at. A stream copy cannot change the sample rate, so this rewrites the audio
+  only and leaves the video untouched when the codecs are otherwise fine.
+
+The two boxes work with conversion switched off as well — they are explicit
+asks, so they win over the "already compatible" shortcut. The clip range is
+applied while downloading, so it works either way.
+
 ## Keeping up to date
 
 The installer puts a small command-line tool on your PATH, next to the helper:
@@ -216,6 +238,9 @@ manifest version, the core version and that file in step.
 | `default_mode` | `premiere_safe` or `best` for the Auto entry |
 | `default_target` | `h264`, `dnxhr` or `prores` |
 | `keep_original` | keep the non-Premiere source after converting |
+| `clip_start` / `clip_end` | default clip range the popup pre-fills (`""` = the whole video) |
+| `force_cfr` | default for the **Constant FPS** box (default `false`) |
+| `audio_48k` | default for the **48 kHz audio** box (default `false`) |
 | `ensure_audio` | when a picked format is video-only, also fetch the best audio and mux it in (default `true`) |
 | `cookies_from_browser` | browser to borrow cookies from: `auto` (Firefox, the default), `firefox`, `chrome`, `edge`, `brave`, … or `none`. Clears YouTube's "confirm you're not a bot" wall |
 | `force_no_playlist` | refuse playlist URLs (default `true`) |

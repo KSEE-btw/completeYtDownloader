@@ -171,6 +171,24 @@
     });
     const hintEl = el("div", { class: "hint" });
 
+    // --- editor pack: clip range, constant frame rate, 48 kHz ---
+    const clipStart = el("input", {
+      type: "text",
+      placeholder: "start",
+      spellcheck: "false",
+      title: "Start of the clip \u2014 1:30 or 0:01:30. Blank means the start.",
+      oninput: updateHint,
+    });
+    const clipEnd = el("input", {
+      type: "text",
+      placeholder: "end",
+      spellcheck: "false",
+      title: "End of the clip \u2014 2:15 or 0:02:15. Blank means the end.",
+      oninput: updateHint,
+    });
+    const cfrBox = el("input", { type: "checkbox", onchange: updateHint });
+    const k48Box = el("input", { type: "checkbox", onchange: updateHint });
+
     const dlBtn = el("button", {
       class: "primary",
       text: "Download",
@@ -212,11 +230,31 @@
       el("span", { text: "Save to" }),
       el("div", { class: "folderrow" }, [outdirInput, outdirBtn]),
     ]);
+    const clipField = el("label", { class: "field" }, [
+      el("span", { text: "Clip (optional)" }),
+      el("div", { class: "timerow" }, [
+        clipStart,
+        el("span", { class: "dash", text: "\u2192" }),
+        clipEnd,
+      ]),
+    ]);
+    const cfrLine = el("label", {
+      class: "checkline",
+      title: "Force a constant frame rate \u2014 stops VFR footage drifting " +
+        "against the audio on a timeline",
+    }, [cfrBox, el("span", { text: "Constant FPS" })]);
+    const k48Line = el("label", {
+      class: "checkline",
+      title: "Re-encode the audio at 48 kHz, the rate editing tools mix at",
+    }, [k48Box, el("span", { text: "48 kHz audio" })]);
+    const editorBoxes = el("div", { class: "checkgrid" }, [cfrLine, k48Line]);
 
     const body = el("div", { class: "body" }, [
       urlRow,
       titleEl,
       formatField,
+      clipField,
+      editorBoxes,
       el("div", { class: "checkline" }, [
         convertBox,
         el("span", {
@@ -263,6 +301,10 @@
       formatSel.disabled = busy;
       convertBox.disabled = busy;
       targetSel.disabled = busy || !convertBox.checked;
+      clipStart.disabled = busy;
+      clipEnd.disabled = busy;
+      cfrBox.disabled = busy;
+      k48Box.disabled = busy;
       probeBtn.disabled = busy;
       outdirBtn.disabled = busy;
     }
@@ -285,6 +327,48 @@
 
     function targetLabel() {
       return state.targets[targetSel.value] || targetSel.value;
+    }
+
+    // Mirrors the host's parse_timecode: "90", "1:30" or "0:01:30".  Blank is
+    // 0 ("no bound"); nonsense is null so a bad clip is refused before we
+    // hand anything to the downloader.
+    function parseTime(value) {
+      const text = String(value || "")
+        .trim()
+        .replace(/s$/i, "")
+        .replace(",", ".");
+      if (!text) {
+        return 0;
+      }
+      const parts = text.split(":");
+      if (parts.length > 3) {
+        return null;
+      }
+      let total = 0;
+      for (const part of parts) {
+        const piece = Number(part.trim());
+        if (part.trim() === "" || !Number.isFinite(piece) || piece < 0) {
+          return null;
+        }
+        total = total * 60 + piece;
+      }
+      return total;
+    }
+
+    function editorNote() {
+      const bits = [];
+      const start = (clipStart.value || "").trim();
+      const end = (clipEnd.value || "").trim();
+      if (start || end) {
+        bits.push(`clip ${start || "0:00"}\u2013${end || "end"}`);
+      }
+      if (cfrBox.checked) {
+        bits.push("constant frame rate");
+      }
+      if (k48Box.checked) {
+        bits.push("48 kHz audio");
+      }
+      return bits.join(", ");
     }
 
     function updateHint() {
@@ -323,6 +407,10 @@
         if (!convert && entry.compat !== "ok" && entry.kind !== "video") {
           text += " Conversion is off, so it downloads as-is.";
         }
+      }
+      const editor = editorNote();
+      if (editor) {
+        text += (text ? " " : "") + `Editor: ${editor}.`;
       }
       // textContent only -- never innerHTML (Trusted Types on YouTube).
       hintEl.replaceChildren();
@@ -437,6 +525,11 @@
         }
         fillTargets();
         outdirInput.value = state.config.outdir || "";
+        clipStart.value = state.config.clip_start || "";
+        clipEnd.value = state.config.clip_end || "";
+        cfrBox.checked = configFlag(state.config.force_cfr, false);
+        k48Box.checked = configFlag(state.config.audio_48k, false);
+        updateHint();
         return;
       }
 
@@ -679,6 +772,19 @@
         setStatus("Paste a video URL first.", "bad");
         return;
       }
+      const clipFrom = parseTime(clipStart.value);
+      const clipTo = parseTime(clipEnd.value);
+      if (clipFrom === null || clipTo === null) {
+        setStatus(
+          "Clip times look like 1:30 or 0:01:30 (seconds are fine too).",
+          "bad"
+        );
+        return;
+      }
+      if (clipFrom && clipTo && clipTo <= clipFrom) {
+        setStatus("The clip's end has to come after its start.", "bad");
+        return;
+      }
       const sel = resolvedSelection();
       state.jobId = nextId("dl");
       // The Windows queue window owns the download from here on, so the panel
@@ -698,6 +804,10 @@
         convert: convertBox.checked,
         target: targetSel.value,
         keep_original: !!state.config.keep_original,
+        clip_start: (clipStart.value || "").trim(),
+        clip_end: (clipEnd.value || "").trim(),
+        force_cfr: cfrBox.checked,
+        audio_48k: k48Box.checked,
       });
     }
 

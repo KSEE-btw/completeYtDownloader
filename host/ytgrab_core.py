@@ -27,7 +27,7 @@ import uuid
 # --------------------------------------------------------------------------- #
 
 APP = "ytgrab"
-VERSION = "0.3.11"
+VERSION = "0.3.12"
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", APP)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -78,6 +78,18 @@ DEFAULT_CONFIG = {
     # libx264 | h264_nvenc | h264_qsv | h264_amf  (hardware is faster but
     # slightly less efficient per bitrate -- opt in explicitly)
     "video_encoder": "libx264",
+
+    # ---- editor pack ----
+    # grab only part of a video: "90", "1:30" or "0:01:30" (blank = the lot).
+    # yt-dlp fetches just the fragments that cover the range, and the cut lands
+    # on a keyframe, which is what a timeline wants.
+    "clip_start": "",
+    "clip_end": "",
+    # pin the frame rate to a constant one so VFR sources (most phone and
+    # screen-capture material) do not drift against the audio on a timeline
+    "force_cfr": False,
+    # re-encode audio to 48 kHz, the rate editing tools mix at
+    "audio_48k": False,
 
     # binary overrides ("" = look up on PATH)
     "ytdlp": "",
@@ -420,6 +432,164 @@ def compat_state(vfam, afam, ext: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# editor pack: clip ranges, constant frame rate, 48 kHz audio
+# --------------------------------------------------------------------------- #
+
+def _int(value) -> int:
+    try:
+        return int(str(value if value is not None else "").strip() or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _ratio(value) -> float:
+    """ffprobe's "30000/1001" (or a plain number) as a float."""
+    try:
+        num, sep, den = str(value or "").partition("/")
+        if sep:
+            den = float(den)
+            return float(num) / den if den else 0.0
+        return float(num)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def parse_timecode(value):
+    """Seconds from "90", "1:30" or "0:01:30.5"; None when it is not one.
+
+    Typed by hand, so a trailing "s", stray spaces and a comma decimal mark
+    all pass.  Blank or nonsense returns None, meaning "no bound".
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) if value >= 0 else None
+    text = str(value).strip().rstrip("sS").replace(",", ".").strip()
+    if not text:
+        return None
+    parts = text.split(":")
+    if len(parts) > 3:
+        return None
+    total = 0.0
+    for part in parts:
+        try:
+            piece = float(part.strip())
+        except ValueError:
+            return None
+        if piece < 0:
+            return None
+        total = total * 60.0 + piece
+    return total
+
+
+def format_timecode(seconds: float) -> str:
+    """90 -> "1:30", 3661.25 -> "1:01:01.250" (the inverse of the above)."""
+    whole = int(seconds)
+    millis = int(round((seconds - whole) * 1000))
+    hours, rest = divmod(whole, 3600)
+    minutes, secs = divmod(rest, 60)
+    head = (f"{hours}:{minutes:02d}:{secs:02d}" if hours
+            else f"{minutes}:{secs:02d}")
+    return f"{head}.{millis:03d}" if millis else head
+
+
+def clip_bounds(spec: dict, cfg: dict):
+    """(start, end) seconds for the requested clip -- each may be None."""
+    def pick(name):
+        if spec.get(name) is not None and str(spec.get(name)).strip():
+            return spec.get(name)
+        return cfg.get(name)
+    start = parse_timecode(pick("clip_start"))
+    end = parse_timecode(pick("clip_end"))
+    if start is not None and end is not None and end <= start:
+        return start, None          # a backwards range just runs to the end
+    return start, end
+
+
+def section_args(start, end):
+    """yt-dlp's --download-sections arguments for a clip, or [] for all of it.
+
+    This makes yt-dlp fetch only the fragments covering the range, so a
+    30-second clip of a two-hour VOD does not download two hours.  Keyframes
+    are forced at the cut because without a re-encode the cut would land on
+    whatever keyframe came before it.
+    """
+    if start is None and end is None:
+        return []
+    if start is None:
+        span = f"*0-{format_timecode(end)}"
+    elif end is None:
+        span = f"*{format_timecode(start)}-inf"
+    else:
+        span = f"*{format_timecode(start)}-{format_timecode(end)}"
+    return ["--download-sections", span, "--force-keyframes-at-cuts"]
+
+
+def frame_rates(info: dict):
+    """(nominal, average) frames per second for the video -- 0 when unknown."""
+    video = info.get("video") or {}
+    return video.get("fps") or 0.0, video.get("fps_avg") or 0.0
+
+
+def is_vfr(info: dict) -> bool:
+    """True when the stream's frame rate wanders -- the NLE drift case."""
+    nominal, average = frame_rates(info)
+    if nominal <= 0 or average <= 0:
+        return False
+    return abs(nominal - average) > max(0.05, average * 0.002)
+
+
+def cfr_args(info: dict):
+    """ffmpeg arguments that pin the output to a constant frame rate.
+
+    The source's own rate is kept (as the exact rational ffprobe reported, so
+    29.97 stays 30000/1001); only the *variance* is removed.
+    """
+    raw = ((info.get("video") or {}).get("fps_raw") or "").strip()
+    if "/" in raw:
+        return ["-fps_mode", "cfr", "-r", raw]
+    nominal, _ = frame_rates(info)
+    if nominal <= 0:
+        return []
+    return ["-fps_mode", "cfr", "-r", f"{nominal:.6f}"]
+
+
+def editor_flags(spec: dict, cfg: dict) -> dict:
+    """What the editor asked for, resolved against the config defaults."""
+    def flag(name, fallback=False):
+        value = spec.get(name)
+        if value is None or value == "":
+            value = cfg.get(name, fallback)
+        if isinstance(value, str):
+            return value.strip().lower() not in ("", "false", "0", "no", "off")
+        return bool(value)
+    start, end = clip_bounds(spec, cfg)
+    return {"clip_start": start, "clip_end": end,
+            "force_cfr": flag("force_cfr"), "audio_48k": flag("audio_48k")}
+
+
+def choose_action(state: str, want_convert: bool, need_cfr: bool,
+                  need_48k: bool) -> str:
+    """move | remux | convert -- what has to happen to the file that landed.
+
+    `state` is what compat_state says about the source.  The editor's asks win
+    over the "it is already fine" shortcut: a constant frame rate can only be
+    rebuilt, and a 48 kHz audio track has to be rewritten.
+    """
+    if need_cfr:
+        return "convert"
+    if state == "remux" and want_convert:
+        return "remux"
+    if state in ("ok", "remux") and need_48k:
+        return "remux"              # keep the video, rewrite the audio
+    if state == "ok":
+        return "move"
+    if want_convert or need_48k:
+        return "convert"
+    return "move"
+
+
+# --------------------------------------------------------------------------- #
 # encoder recipes
 # --------------------------------------------------------------------------- #
 
@@ -447,19 +617,22 @@ def video_args_for(target: str, cfg: dict):
     return TARGETS[target]["vargs"]
 
 
-def audio_args_for(target: str, cfg: dict, afam):
-    """Re-encode audio only when we must; a stream copy is instant and lossless."""
+def audio_args_for(target: str, cfg: dict, afam, force_48k: bool = False):
+    """Re-encode audio only when we must; a copy is instant and lossless.
+
+    force_48k rewrites the samples, so it rules a copy out -- an editor asked
+    for 48 kHz would get 44.1 back otherwise.
+    """
     plan = TARGETS[target]
     if afam is None:
         return []
-    if target == "h264":
-        if afam == "aac":
+    if not force_48k:
+        if target == "h264":
+            if afam in ("aac", "mp3"):
+                return ["-c:a", "copy"]
+        elif afam == "pcm":
             return ["-c:a", "copy"]
-        if afam == "mp3":
-            return ["-c:a", "copy"]          # mp3 in mp4 is legal
-    elif afam == "pcm":
-        return ["-c:a", "copy"]
-    return plan["aargs"]
+    return list(plan["aargs"]) + (["-ar", "48000"] if force_48k else [])
 
 
 def download_speed_args(cfg: dict):
@@ -737,7 +910,8 @@ def probe_file(path: str) -> dict:
     if not exe:
         raise RuntimeError("ffprobe was not found on PATH")
     args = [exe, "-v", "error", "-show_entries",
-            "stream=index,codec_type,codec_name,profile,width,height",
+            "stream=index,codec_type,codec_name,profile,width,height,"
+            "r_frame_rate,avg_frame_rate,sample_rate,channels",
             "-show_entries", "format=format_name,duration,bit_rate",
             "-of", "json", path]
 
@@ -771,11 +945,16 @@ def probe_file(path: str) -> dict:
                 "name": stream.get("codec_name"),
                 "width": stream.get("width"),
                 "height": stream.get("height"),
+                "fps": _ratio(stream.get("r_frame_rate")),
+                "fps_avg": _ratio(stream.get("avg_frame_rate")),
+                "fps_raw": (stream.get("r_frame_rate") or "").strip(),
             }
         elif stream.get("codec_type") == "audio" and result["audio"] is None:
             result["audio"] = {
                 "family": audio_family(stream.get("codec_name")),
                 "name": stream.get("codec_name"),
+                "sample_rate": _int(stream.get("sample_rate")),
+                "channels": _int(stream.get("channels")),
             }
     return result
 
@@ -898,6 +1077,8 @@ def run_download(job: Job, spec: dict, emit) -> dict:
     # mux the two in the same task; muxed/audio picks are unaffected.
     selector = ensure_audio_selector(selector, cfg.get("ensure_audio", True))
 
+    editor = editor_flags(spec, cfg)
+
     outdir = expand(spec.get("outdir") or cfg.get("outdir")
                     or DEFAULT_CONFIG["outdir"])
     os.makedirs(outdir, exist_ok=True)
@@ -909,11 +1090,14 @@ def run_download(job: Job, spec: dict, emit) -> dict:
     os.makedirs(tmpdir, exist_ok=True)
 
     try:
+        clip = section_args(editor["clip_start"], editor["clip_end"])
         emit({"type": "stage", "stage": "downloading",
-              "stage_label": "Downloading from the web"})
+              "stage_label": ("Downloading the clip" if clip
+                              else "Downloading from the web")})
 
         args = ([exe] + ytdlp_base_args(cfg, progress=True)
                 + download_speed_args(cfg)
+                + clip
                 + ["-f", selector,
                    "--newline",
                    "-o", os.path.join(tmpdir, "%(title)s.%(ext)s"),
@@ -969,7 +1153,24 @@ def run_download(job: Job, spec: dict, emit) -> dict:
             (info["video"] or {}).get("name"),
             (info["audio"] or {}).get("name")])) or "unknown"
 
-        if not want_convert or state == "ok":
+        # --- the editor pack ---
+        # A frame rate can only be pinned by re-encoding the video, and 48 kHz
+        # by rewriting the audio, so each counts as "needed" only when the file
+        # would not come out that way on its own.
+        need_cfr = editor["force_cfr"] and is_vfr(info)
+        src_rate = (info["audio"] or {}).get("sample_rate") or 0
+        need_48k = (editor["audio_48k"] and info["audio"] is not None
+                    and src_rate != 48000)
+        extras = []
+        if need_cfr:
+            nominal, _ = frame_rates(info)
+            extras.append(f"constant {nominal:.3f} fps")
+        if need_48k:
+            extras.append("48 kHz audio")
+
+        action = choose_action(state, want_convert, need_cfr, need_48k)
+
+        if action == "move":
             dest = unique_path(os.path.join(outdir, os.path.basename(source)))
             shutil.move(source, dest)
             if not want_convert:
@@ -990,21 +1191,27 @@ def run_download(job: Job, spec: dict, emit) -> dict:
         # Decoding on the GPU is free speed and cannot change the output.
         pre = ["-hwaccel", "auto"] if cfg.get("hwaccel", True) else []
         vargs = video_args_for(target, cfg)
-        aargs = audio_args_for(target, cfg, afam)
+        aargs = audio_args_for(target, cfg, afam, force_48k=need_48k)
 
-        if state == "remux":
+        if action == "remux":
             emit({"type": "stage", "stage": "remuxing",
                   "stage_label": "Repackaging into a Premiere container (fast)"})
+            # A copy handles almost all of it; only a 48 kHz ask has to touch
+            # the audio, and even then the video stays untouched.
+            audio = (audio_args_for(target, cfg, afam, force_48k=True)
+                     if need_48k else ["-c:a", "copy"])
             _ffmpeg_run(job, ["-y", "-i", source,
                               "-map", "0:v:0", "-map", "0:a:0?",
-                              "-c", "copy"] + plan["extra"] + [final],
+                              "-c:v", "copy"] + audio
+                        + plan["extra"] + [final],
                         duration, "remuxing", emit)
         else:
             emit({"type": "stage", "stage": "converting",
                   "stage_label": f"Converting to {plan['label']}"})
             convert_args = (["-y", "-i", source,
                              "-map", "0:v:0", "-map", "0:a:0?"]
-                            + vargs + aargs
+                            + vargs + (cfr_args(info) if need_cfr else [])
+                            + aargs
                             + ["-map_metadata", "0", "-map_chapters", "0"]
                             + plan["extra"] + [final])
             try:
@@ -1036,6 +1243,8 @@ def run_download(job: Job, spec: dict, emit) -> dict:
         detail = f"converted from {codec_txt}"
         if aargs == ["-c:a", "copy"]:
             detail += " (audio copied)"
+        if extras:
+            detail += ", " + " and ".join(extras)
         return {"path": final, "mode": state, "codecs": codec_txt,
                 "note": detail}
     except Cancelled:

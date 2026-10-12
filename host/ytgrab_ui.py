@@ -165,11 +165,28 @@ def fmt_eta(seconds) -> str:
     return f"{s}s"
 
 
+def clip_note(spec) -> str:
+    """ "clip 1:30\u20132:15" when the item only wants part of the video.
+
+    The popup pre-fills the clip row from the stored settings and sends it with
+    every download, so the spec is enough to describe the range.
+    """
+    start, end = core.clip_bounds(spec or {}, {})
+    if start is None and end is None:
+        return ""
+    left = core.format_timecode(start) if start is not None else "0:00"
+    right = core.format_timecode(end) if end is not None else "end"
+    return f"clip {left}\u2013{right}"
+
+
 def detail_text(item) -> str:
     status = item["status"]
     if status == "queued":
-        return "Waiting in the queue"
+        note = clip_note(item.get("spec"))
+        return "Waiting in the queue" + (f" \u00b7 {note}" if note else "")
     if status == "running":
+        note = clip_note(item.get("spec"))
+        tail = f" \u00b7 {note}" if note else ""
         if item["stage"] == "downloading":
             bits = [f"Downloading {item['percent']:.0f}%"]
             if item["total"]:
@@ -178,8 +195,8 @@ def detail_text(item) -> str:
                 bits.append(fmt_speed(item["speed"]))
             if item["eta"]:
                 bits.append(f"ETA {fmt_eta(item['eta'])}")
-            return "   ".join(bits)
-        return item["stage_label"] or "Working..."
+            return "   ".join(bits) + tail
+        return (item["stage_label"] or "Working...") + tail
     if status == "done":
         name = os.path.basename(item["path"]) if item["path"] else ""
         note = item["note"] or "saved"
@@ -638,7 +655,8 @@ class QueueManager:
 # --------------------------------------------------------------------------- #
 
 ENQUEUE_FIELDS = ("url", "format", "mode", "convert", "target", "outdir",
-                  "keep_original", "title")
+                  "keep_original", "title",
+                  "clip_start", "clip_end", "force_cfr", "audio_48k")
 
 
 def make_handler(qm: QueueManager, on_ui_command):
