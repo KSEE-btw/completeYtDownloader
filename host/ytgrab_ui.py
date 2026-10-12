@@ -12,6 +12,8 @@ Modes
     ytgrab-host.exe --ui --show    focus an existing window, else open one
     ytgrab-host.exe --headless     run the queue with no window (testing/CI)
     ytgrab-host.exe --self-test    end-to-end check of queue + IPC (testing)
+                                   (add --self-test-url URL and
+                                    --self-test-clip 0:05-0:25 to drive it)
     ytgrab-host.exe --smoke        build the window and close it (testing)
 
 Closing the window keeps the process alive; downloads continue.  Use Quit to
@@ -188,6 +190,10 @@ def detail_text(item) -> str:
         note = clip_note(item.get("spec"))
         tail = f" \u00b7 {note}" if note else ""
         if item["stage"] == "downloading":
+            if note and item["percent"] <= 0:
+                # A clip is cut by ffmpeg, which reports no position until its
+                # first status line, so a determined "0%" here reads as a stall.
+                return "Downloading the clip" + tail
             bits = [f"Downloading {item['percent']:.0f}%"]
             if item["total"]:
                 bits.append(f"of {fmt_bytes(item['total'])}")
@@ -1104,6 +1110,12 @@ if TK_OK:
             running = status == "running"
             determinate = running and item["stage"] in (
                 "downloading", "remuxing", "converting")
+            if (determinate and item["stage"] == "downloading"
+                    and item["percent"] <= 0 and clip_note(item.get("spec"))):
+                # A clip's opening seconds (and a very short clip all the way
+                # through) have no measurable position yet, so spin rather
+                # than park a determined bar at 0%.
+                determinate = False
             if determinate:
                 if row["bar_mode"] != "determinate":
                     row["bar"].stop()
@@ -1354,7 +1366,14 @@ def _run_headless(qm: QueueManager) -> int:
     return 0
 
 
-def _self_test(url: str, fmt: str = "", mode: str = "premiere_safe") -> int:
+def _parse_clip(text: str):
+    """ "0:05-0:25" -> ("0:05", "0:25"); either side may be left blank."""
+    head, _, tail = (text or "").partition("-")
+    return head.strip(), tail.strip()
+
+
+def _self_test(url: str, fmt: str = "", mode: str = "premiere_safe",
+               clip: str = "") -> int:
     """End-to-end check: queue + worker + IPC, with no window."""
     import tempfile
     tmp = tempfile.mkdtemp(prefix="ytgrab-selftest-")
@@ -1364,10 +1383,13 @@ def _self_test(url: str, fmt: str = "", mode: str = "premiere_safe") -> int:
     server.start()
     print(f"server on 127.0.0.1:{server.port}, queue in {tmp}")
 
+    clip_start, clip_end = _parse_clip(clip)
     job = ipc.request({"cmd": "enqueue", "url": url, "format": fmt,
                        "mode": mode, "convert": True,
                        "target": "h264", "outdir": tmp, "keep_original": False,
-                       "title": "self-test"})
+                       "title": "self-test",
+                       "clip_start": clip_start, "clip_end": clip_end,
+                       "force_cfr": False, "audio_48k": False})
     print("enqueue ->", job)
     print("status  ->", ipc.request({"cmd": "status"}))
 
@@ -1427,7 +1449,8 @@ def main(args=None) -> int:
             return default
         return _self_test(value("--self-test-url"),
                           fmt=value("--self-test-format"),
-                          mode=value("--self-test-mode", "premiere_safe"))
+                          mode=value("--self-test-mode", "premiere_safe"),
+                          clip=value("--self-test-clip"))
     if "--smoke" in args:
         return _smoke()
 

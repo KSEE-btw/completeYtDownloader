@@ -27,7 +27,7 @@ import uuid
 # --------------------------------------------------------------------------- #
 
 APP = "ytgrab"
-VERSION = "0.3.12"
+VERSION = "0.3.14"
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", APP)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -523,6 +523,18 @@ def section_args(start, end):
     else:
         span = f"*{format_timecode(start)}-{format_timecode(end)}"
     return ["--download-sections", span, "--force-keyframes-at-cuts"]
+
+
+def clip_length(editor: dict) -> float:
+    """Seconds covered by the requested clip, or 0 when the end is open.
+
+    Only used to turn ffmpeg's position into a percentage, so "unknown" is a
+    perfectly good answer -- the caller falls back to an indeterminate bar.
+    """
+    end = editor.get("clip_end")
+    if end is None:
+        return 0.0
+    return max(0.0, end - (editor.get("clip_start") or 0.0))
 
 
 def frame_rates(info: dict):
@@ -1024,6 +1036,56 @@ def _ytdlp_progress_event(parts):
             "total": total, "speed": speed, "eta": eta}
 
 
+_FFMPEG_TIME_RE = re.compile(r"\btime=(\d+):([0-5]\d):([0-5]\d(?:\.\d+)?)\b")
+_FFMPEG_SPEED_RE = re.compile(r"\bspeed=\s*([\d.]+)x")
+_TIME_RANGE_RE = re.compile(r"time ranges?:\s*([\d.]+)\s*-\s*([\d.]+)")
+
+
+def _is_ffmpeg_status(line: str) -> bool:
+    """True for ffmpeg's own "frame=... time=... speed=..." progress line."""
+    return "time=" in line and ("frame=" in line or "speed=" in line)
+
+
+def _ffmpeg_progress_event(line: str, section: float, seen: float):
+    """Download progress for a clip, read off ffmpeg's status line.
+
+    --download-sections hands the whole clip to ffmpeg, so yt-dlp's own
+    progress hook fires exactly once, at the very end: without this the bar sat
+    at 0% for the entire download.  ffmpeg's periodic status line rides along
+    on the same output and counts up through the section, which is what this
+    turns back into a percentage.  Returns None when there is nothing new to
+    report (no length known yet, a repeated position, or "time=N/A").
+    """
+    if section <= 0:
+        return None
+    match = _FFMPEG_TIME_RE.search(line)
+    if not match:
+        return None
+    seconds = (int(match.group(1)) * 3600 + int(match.group(2)) * 60
+               + float(match.group(3)))
+    if seconds <= seen:
+        return None
+    speed = _FFMPEG_SPEED_RE.search(line)
+    speed = float(speed.group(1)) if speed else 0.0
+    return {"type": "progress", "phase": "downloading",
+            "percent": min(100.0, seconds / section * 100.0),
+            "downloaded": 0, "total": 0, "seconds": seconds, "speed": 0,
+            "eta": ((section - seconds) / speed if speed > 0 else 0.0)}
+
+
+def _section_length(line: str) -> float:
+    """The span yt-dlp reports for the section it is about to fetch.
+
+    A clip with no end ("*1:30-inf") stays unknown, but an end past the end of
+    the video comes back clamped, which is worth picking up.
+    """
+    match = _TIME_RANGE_RE.search(line)
+    if not match:
+        return 0.0
+    start, end = float(match.group(1)), float(match.group(2))
+    return max(0.0, end - start) if end > start else 0.0
+
+
 def _last_error(tail) -> str:
     """Pick the most useful line out of yt-dlp's trailing output."""
     for line in reversed(tail):
@@ -1091,6 +1153,11 @@ def run_download(job: Job, spec: dict, emit) -> dict:
 
     try:
         clip = section_args(editor["clip_start"], editor["clip_end"])
+        # ffmpeg cuts a clip, so its own status line is the only progress
+        # source we get -- `section` is the length to measure it against.
+        section = clip_length(editor)
+        seen = 0.0
+        samples = 0
         emit({"type": "stage", "stage": "downloading",
               "stage_label": ("Downloading the clip" if clip
                               else "Downloading from the web")})
@@ -1120,6 +1187,23 @@ def run_download(job: Job, spec: dict, emit) -> dict:
             line = line.rstrip("\r\n")
             if line.startswith("@@P@@"):
                 emit(_ytdlp_progress_event(line[5:].split()))
+            elif clip and "time range" in line:
+                # yt-dlp announces the span it actually resolved, which beats
+                # what was typed: an end past the video comes back clamped, so
+                # measuring against the request would never reach 100%.
+                section = _section_length(line) or section
+            elif clip and _is_ffmpeg_status(line):
+                event = _ffmpeg_progress_event(line, section, seen)
+                if event:
+                    seen = event["seconds"]
+                    samples += 1
+                    if samples <= 2:
+                        # The first lines arrive while ffmpeg is still filling
+                        # its buffers, and its speed reads far too low then
+                        # (minutes of ETA for a 30-second clip).  The position
+                        # is real straight away; the ETA needs a moment.
+                        event["eta"] = 0.0
+                    emit(event)
             elif line.startswith("[Merger]") or "Merging formats" in line:
                 emit({"type": "stage", "stage": "merging",
                       "stage_label": "Muxing video + audio"})
