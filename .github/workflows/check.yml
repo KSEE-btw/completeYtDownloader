@@ -1,11 +1,12 @@
 # Cheap consistency checks that protect the release contract.
 #
-#   * the version in extension/manifest.json, the one in host/ytgrab_core.py,
+#   * the version in extension/manifest.json, the one in src/ytgrab/__init__.py,
 #     and the release-notes file must all agree, so `ytgrab update` and the
 #     release workflow can rely on any one of them
 #   * every release whose manifest version is new must have
 #     docs/releases/v<version>.md, because the release workflow uses it as the
 #     release body
+#   * the regression suites in tests/ still pass after a refactor
 
 name: check
 
@@ -27,3 +28,29 @@ jobs:
       - name: Version parity and release notes
         shell: bash
         run: python scripts/check_versions.py
+
+      - name: Lint
+        shell: bash
+        run: |
+          python -m pip install --quiet pyflakes
+          python -m pyflakes src tests scripts
+
+  tests:
+    # The app is Windows-only (Tk + a Firefox native host), and the suites drive
+    # real ffmpeg, so they run on the platform they ship to.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ffmpeg
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Install yt-dlp
+        run: python -m pip install --upgrade yt-dlp
+
+      - name: Regression suites
+        run: python tests/run_all.py
